@@ -15,7 +15,7 @@ export function sanitizeTavernHtml(text: string): string {
     .replace(/url\s*\(\s*['"]?\s*javascript:[^)]*\)/gi, 'none');
 }
 
-export function applyTavernResponseFormat(card: TavernCharacterCard, text: string) {
+export function applyTavernResponseFormat(card: TavernCharacterCard, text: string, options: { preserveInteractiveHtml?: boolean } = {}) {
   let value = applyTavernRegex(text, getRegexScripts(card), 'output');
   const profile = detectTavernFormatProfile(card);
   if (profile.outputTemplate && /{{\s*response\s*}}/i.test(profile.outputTemplate)) {
@@ -25,5 +25,17 @@ export function applyTavernResponseFormat(card: TavernCharacterCard, text: strin
   // ```html fences. The fence is transport syntax, not the card's intended UI, so
   // unwrap only explicit html fences; ordinary code blocks remain untouched.
   value = value.replace(/```html\s*([\s\S]*?)\s*```/gi, '$1');
-  return sanitizeTavernHtml(value);
+  // Character-card HTML is rendered inside a sandboxed iframe. Keeping its inline
+  // scripts/event attributes here is what makes card-owned controls (collapse,
+  // tabs, counters, etc.) actually work. Non-card callers keep the old sanitised path.
+  return options.preserveInteractiveHtml ? sanitizeTavernHtmlInteractive(value) : sanitizeTavernHtml(value);
+}
+
+function sanitizeTavernHtmlInteractive(text: string): string {
+  return text
+    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object\b[^>]*>[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed\b[^>]*>/gi, '')
+    .replace(/(href|src)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, '$1="#"')
+    .replace(/url\s*\(\s*["']?\s*javascript:[^)]*\)/gi, 'none');
 }

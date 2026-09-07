@@ -65,6 +65,8 @@ export type TavernCharacterCard = {
   spec_version?: string;
   data: TavernCardData;
   raw: Record<string, unknown>;
+  /** Immutable snapshot captured at import time; editor mutations never overwrite it. */
+  originalRaw?: Record<string, unknown>;
   sourceFormat: 'png-v3' | 'png-v2' | 'png-v1' | 'json-v3' | 'json-v2' | 'json-v1' | 'charx';
   avatar?: string | null;
   embeddedAssets?: Record<string, string>;

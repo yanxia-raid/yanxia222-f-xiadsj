@@ -6,7 +6,8 @@ function asRecord(v: unknown): Record<string, unknown> | null { return v && type
 function arr(v: unknown): unknown[] { return Array.isArray(v) ? v : []; }
 
 function normalizeCard(raw: Record<string, unknown>, sourceFormat: TavernCharacterCard['sourceFormat'], avatar?: string | null): TavernCharacterCard {
-  const data = asRecord(raw.data) || raw;
+  const rawSnapshot = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
+  const data = JSON.parse(JSON.stringify(asRecord(raw.data) || raw)) as Record<string, unknown>;
   const spec = typeof raw.spec === 'string' ? raw.spec : 'chara_card_v1';
   const specVersion = typeof raw.spec_version === 'string' ? raw.spec_version : undefined;
   const book = asRecord(data.character_book);
@@ -15,7 +16,8 @@ function normalizeCard(raw: Record<string, unknown>, sourceFormat: TavernCharact
     spec,
     spec_version: specVersion,
     data: data as TavernCardData,
-    raw,
+    raw: rawSnapshot,
+    originalRaw: JSON.parse(JSON.stringify(rawSnapshot)) as Record<string, unknown>,
     sourceFormat,
     avatar: avatar ?? null,
     importedAt: new Date().toISOString(),
