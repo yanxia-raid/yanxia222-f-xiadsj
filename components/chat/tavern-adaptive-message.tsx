@@ -167,9 +167,32 @@ body{box-sizing:border-box !important;position:relative !important;left:0 !impor
 function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css: string; onActionSelect?: (text: string) => void }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(100);
+  const [surfaceWidth, setSurfaceWidth] = useState<number | null>(null);
   const srcDoc = useMemo(() => buildCardHtmlDocument(html, css), [html, css]);
 
   useEffect(() => setHeight(100), [srcDoc]);
+
+  // 角色卡不再受 70% 聊天气泡宽度限制。
+  // 直接读取消息行宽度，并按照原生状态栏的“左右留出约 64px”规则给卡片可用宽度。
+  useEffect(() => {
+    const updateWidth = () => {
+      const iframe = iframeRef.current;
+      const row = iframe?.closest?.(".chat-msg-wrapper") as HTMLElement | null;
+      if (!row) return;
+      const w = Math.floor(row.getBoundingClientRect().width || 0);
+      if (w > 80) setSurfaceWidth(Math.max(80, w - 64));
+    };
+    updateWidth();
+    const iframe = iframeRef.current;
+    const row = iframe?.closest?.(".chat-msg-wrapper") as HTMLElement | null;
+    const ro = typeof ResizeObserver !== "undefined" && row ? new ResizeObserver(updateWidth) : null;
+    if (ro && row) ro.observe(row);
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", updateWidth);
+    };
+  }, [srcDoc]);
 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
@@ -187,7 +210,23 @@ function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css:
   }, [onActionSelect]);
 
   return (
-    <div className="tavern-card-html-surface" data-tavern-card-html="true" style={{ margin: 0, padding: 0, background: "transparent", overflow: "hidden", width: "100%", lineHeight: 0 }}>
+    <div
+      className="tavern-card-html-surface"
+      data-tavern-card-html="true"
+      style={{
+        margin: 0,
+        padding: 0,
+        background: "transparent",
+        overflow: "visible",
+        // 聊天气泡本身最多只有 70% 宽；角色卡不能跟着这个宽度被锁死。
+        // 这里向外撑到消息行可用区域，宽度正好参考原生状态栏。
+        width: surfaceWidth ? `${surfaceWidth}px` : "calc(100% / 0.7)",
+        maxWidth: "none",
+        lineHeight: 0,
+        position: "relative",
+        zIndex: 2,
+      }}
+    >
       <iframe
         ref={iframeRef}
         className="tavern-card-html-frame"
@@ -206,6 +245,7 @@ function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css:
 
 export function TavernAdaptiveMessage({ characterId, content, render, onActionSelect }: Props) {
   const [card, setCard] = useState<TavernCharacterCard | null>(null);
+  const adaptiveRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -235,8 +275,42 @@ export function TavernAdaptiveMessage({ characterId, content, render, onActionSe
   const cardCss = useMemo(() => card ? getCardCss(card) : "", [card]);
   const cardUi = hasCardHtml(parsed.cleanText);
 
+  // HTML 角色卡本身就是独立视觉面，不再套一层聊天气泡。
+  // 这里直接把宿主气泡变成透明壳，避免白底/圆角/内边距出现在卡片四周。
+  useEffect(() => {
+    if (!cardUi) return;
+    const host = adaptiveRef.current?.closest('[data-ui^="bubble-"]') as HTMLElement | null;
+    if (!host) return;
+    const previous = {
+      background: host.style.background,
+      border: host.style.border,
+      boxShadow: host.style.boxShadow,
+      padding: host.style.padding,
+      borderRadius: host.style.borderRadius,
+      backdropFilter: host.style.backdropFilter,
+      WebkitBackdropFilter: host.style.WebkitBackdropFilter,
+    };
+    host.style.background = "transparent";
+    host.style.border = "none";
+    host.style.boxShadow = "none";
+    host.style.padding = "0";
+    host.style.borderRadius = "0";
+    host.style.backdropFilter = "none";
+    host.style.WebkitBackdropFilter = "none";
+    return () => {
+      host.style.background = previous.background;
+      host.style.border = previous.border;
+      host.style.boxShadow = previous.boxShadow;
+      host.style.padding = previous.padding;
+      host.style.borderRadius = previous.borderRadius;
+      host.style.backdropFilter = previous.backdropFilter;
+      host.style.WebkitBackdropFilter = previous.WebkitBackdropFilter;
+    };
+  }, [cardUi, characterId, parsed.cleanText]);
+
   return (
     <div
+      ref={adaptiveRef}
       data-tavern-adaptive="true"
       data-tavern-character={String(characterId || "unknown")}
       data-tavern-markup={profile?.markup || "plain"}
