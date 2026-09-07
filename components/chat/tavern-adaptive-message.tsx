@@ -59,7 +59,7 @@ function extractEmbeddedHtml(html: string) {
 function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; css: string; onActionSelect?: (text: string) => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(80);
+  const [layout, setLayout] = useState({ width: 1, height: 80, scale: 1 });
   const source = useMemo(() => extractEmbeddedHtml(html), [html]);
 
   useEffect(() => {
@@ -69,11 +69,12 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
 
     canvas.innerHTML = "";
     canvas.style.transform = "none";
-    canvas.style.width = "max-content";
+    canvas.style.width = "fit-content";
     canvas.style.maxWidth = "none";
     canvas.style.height = "auto";
     canvas.style.minHeight = "0";
-    canvas.style.transformOrigin = "top left";
+    canvas.style.display = "inline-block";
+    canvas.style.transformOrigin = "top center";
 
     const style = document.createElement("style");
     style.setAttribute("data-tavern-card-css", "true");
@@ -83,16 +84,17 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
     const content = document.createElement("div");
     content.setAttribute("data-tavern-card-content", "true");
     content.innerHTML = source.body;
+    content.style.display = "inline-block";
+    content.style.width = "fit-content";
+    content.style.maxWidth = "none";
+    content.style.minWidth = "0";
     canvas.appendChild(content);
 
-    // 直接嵌入时浏览器不会因为 innerHTML 自动执行 script，
-    // 所以重新创建 script 节点，让原卡片自己的交互代码继续工作。
+    // innerHTML 不会自动执行 script；重新创建节点以保留角色卡自己的交互。
     const scriptNodes = Array.from(content.querySelectorAll("script"));
     for (const oldScript of scriptNodes) {
       const nextScript = document.createElement("script");
-      for (const attr of Array.from(oldScript.attributes)) {
-        nextScript.setAttribute(attr.name, attr.value);
-      }
+      for (const attr of Array.from(oldScript.attributes)) nextScript.setAttribute(attr.name, attr.value);
       nextScript.textContent = oldScript.textContent || "";
       oldScript.replaceWith(nextScript);
     }
@@ -111,21 +113,28 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
     };
     host.addEventListener("click", clickHandler, true);
 
+    // 从卡片自身样式里提取少量颜色，只用于外围玻璃底，不修改卡片本身。
+    const colorMatches = `${source.headStyles}\n${css}\n${source.body}`.match(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|hsla?\([^)]*\)/g) || [];
+    const colors = colorMatches.filter((c) => !/^#(?:fff|ffffff|fff0|ffffff00)$/i.test(c)).slice(0, 3);
+    const accent = colors[0] || "rgba(255,255,255,.32)";
+    host.style.setProperty("--tavern-card-accent", accent);
+
     const fit = () => {
       const available = Math.max(1, host.clientWidth);
       canvas.style.transform = "none";
 
-      // 先取得卡片自己的自然尺寸，再只在超过聊天区域时缩放“卡片本身”。
-      // 不改变卡片内部布局，因此不会再出现内容只显示一半的问题。
+      // 只测量卡片自己的自然尺寸，不把外层 host 的宽度灌给卡片。
       const rect = canvas.getBoundingClientRect();
       const naturalWidth = Math.max(1, Math.ceil(rect.width), canvas.scrollWidth);
-      const naturalHeight = Math.max(1, Math.ceil(rect.height), canvas.scrollHeight);
+      const naturalHeight = Math.max(1, Math.ceil(canvas.getBoundingClientRect().height), canvas.scrollHeight);
       const scale = naturalWidth > available ? Math.min(1, available / naturalWidth) : 1;
 
-      canvas.style.transformOrigin = "top left";
+      canvas.style.transformOrigin = "top center";
       canvas.style.transform = scale < 0.9999 ? `scale(${scale})` : "none";
+      canvas.style.marginLeft = "auto";
+      canvas.style.marginRight = "auto";
       canvas.style.marginBottom = scale < 0.9999 ? `${-(naturalHeight * (1 - scale))}px` : "0px";
-      setHeight(Math.max(40, Math.ceil(naturalHeight * scale)));
+      setLayout({ width: Math.ceil(naturalWidth * scale), height: Math.max(40, Math.ceil(naturalHeight * scale)), scale });
     };
 
     const runFit = () => {
@@ -152,11 +161,10 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
   return (
     <div
       ref={hostRef}
-      className="tavern-card-html-surface"
-      data-tavern-card-html="true"
+      data-tavern-card-html-host="true"
       style={{
         width: "100%",
-        maxWidth: "none",
+        maxWidth: "100%",
         margin: 0,
         padding: 0,
         border: 0,
@@ -164,28 +172,59 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
         background: "transparent",
         overflow: "visible",
         lineHeight: 0,
-        minHeight: height,
-        height,
+        minHeight: layout.height + 14,
+        height: layout.height + 14,
         position: "relative",
         zIndex: 2,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-start",
       }}
     >
       <div
-        ref={canvasRef}
-        className="tavern-card-html-canvas"
+        className="tavern-card-html-surface"
+        data-tavern-card-html="true"
         style={{
-          display: "block",
-          width: "max-content",
-          maxWidth: "none",
+          width: Math.max(1, layout.width) + 16,
+          maxWidth: "100%",
           margin: 0,
-          padding: 0,
+          padding: "7px 8px",
           border: 0,
-          background: "transparent",
+          outline: "none",
+          background: "linear-gradient(135deg, color-mix(in srgb, var(--tavern-card-accent) 18%, transparent), rgba(255,255,255,.07) 50%, color-mix(in srgb, var(--tavern-card-accent) 12%, transparent))",
+          backdropFilter: "blur(18px) saturate(140%)",
+          WebkitBackdropFilter: "blur(18px) saturate(140%)",
+          borderRadius: 18,
+          boxSizing: "border-box",
           overflow: "visible",
-          lineHeight: "normal",
-          transformOrigin: "top left",
+          lineHeight: 0,
+          minHeight: layout.height + 14,
+          height: layout.height + 14,
+          position: "relative",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "flex-start",
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,.12), 0 6px 20px rgba(0,0,0,.07)",
         }}
-      />
+      >
+        <div
+          ref={canvasRef}
+          className="tavern-card-html-canvas"
+          style={{
+            display: "inline-block",
+            width: "fit-content",
+            maxWidth: "none",
+            margin: 0,
+            padding: 0,
+            border: 0,
+            background: "transparent",
+            overflow: "visible",
+            lineHeight: "normal",
+            transformOrigin: "top center",
+            flex: "0 0 auto",
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -230,59 +269,83 @@ export function TavernAdaptiveMessage({ characterId, content, render, onActionSe
     if (!row) return;
 
     const contentWrap = root?.closest(".chat-msg-content-wrap") as HTMLElement | null;
+    const bubble = root?.closest("[class*='chat-bubble-role-']") as HTMLElement | null;
     const avatar = row.querySelector(":scope > .chat-msg-avatar") as HTMLElement | null;
 
-    const previousRow = {
-      display: row.style.display,
-      width: row.style.width,
-      maxWidth: row.style.maxWidth,
-      alignItems: row.style.alignItems,
-      gap: row.style.gap,
-    };
-    const previousContent = contentWrap ? {
-      width: contentWrap.style.width,
-      maxWidth: contentWrap.style.maxWidth,
-      flex: contentWrap.style.flex,
-      minWidth: contentWrap.style.minWidth,
-      margin: contentWrap.style.margin,
-      padding: contentWrap.style.padding,
+    const snapshot = (el: HTMLElement | null) => el ? {
+      display: el.style.display,
+      width: el.style.width,
+      maxWidth: el.style.maxWidth,
+      minWidth: el.style.minWidth,
+      flex: el.style.flex,
+      margin: el.style.margin,
+      padding: el.style.padding,
+      background: el.style.background,
+      border: el.style.border,
+      boxShadow: el.style.boxShadow,
+      borderRadius: el.style.borderRadius,
+      overflow: el.style.overflow,
     } : null;
+
+    const previousRow = snapshot(row);
+    const previousContent = snapshot(contentWrap);
+    const previousBubble = snapshot(bubble);
     const previousAvatar = avatar ? { display: avatar.style.display } : null;
 
     row.dataset.tavernStandaloneCardRow = "true";
     row.style.display = "block";
     row.style.width = "100%";
     row.style.maxWidth = "none";
-    row.style.alignItems = "stretch";
-    row.style.gap = "0";
+    row.style.minWidth = "0";
+    row.style.margin = "0";
+    row.style.padding = "0";
 
     if (avatar) avatar.style.display = "none";
 
     if (contentWrap) {
+      contentWrap.style.display = "block";
       contentWrap.style.width = "100%";
       contentWrap.style.maxWidth = "none";
-      contentWrap.style.flex = "none";
       contentWrap.style.minWidth = "0";
+      contentWrap.style.flex = "none";
       contentWrap.style.margin = "0";
       contentWrap.style.padding = "0";
     }
 
+    if (bubble) {
+      bubble.style.width = "100%";
+      bubble.style.maxWidth = "none";
+      bubble.style.minWidth = "0";
+      bubble.style.margin = "0";
+      bubble.style.padding = "0";
+      bubble.style.background = "transparent";
+      bubble.style.border = "0";
+      bubble.style.boxShadow = "none";
+      bubble.style.borderRadius = "0";
+      bubble.style.overflow = "visible";
+    }
+
     return () => {
       if (row.dataset.tavernStandaloneCardRow === "true") delete row.dataset.tavernStandaloneCardRow;
-      row.style.display = previousRow.display;
-      row.style.width = previousRow.width;
-      row.style.maxWidth = previousRow.maxWidth;
-      row.style.alignItems = previousRow.alignItems;
-      row.style.gap = previousRow.gap;
+      const restore = (el: HTMLElement | null, state: ReturnType<typeof snapshot>) => {
+        if (!el || !state) return;
+        el.style.display = state.display;
+        el.style.width = state.width;
+        el.style.maxWidth = state.maxWidth;
+        el.style.minWidth = state.minWidth;
+        el.style.flex = state.flex;
+        el.style.margin = state.margin;
+        el.style.padding = state.padding;
+        el.style.background = state.background;
+        el.style.border = state.border;
+        el.style.boxShadow = state.boxShadow;
+        el.style.borderRadius = state.borderRadius;
+        el.style.overflow = state.overflow;
+      };
+      restore(row, previousRow);
+      restore(contentWrap, previousContent);
+      restore(bubble, previousBubble);
       if (avatar && previousAvatar) avatar.style.display = previousAvatar.display;
-      if (contentWrap && previousContent) {
-        contentWrap.style.width = previousContent.width;
-        contentWrap.style.maxWidth = previousContent.maxWidth;
-        contentWrap.style.flex = previousContent.flex;
-        contentWrap.style.minWidth = previousContent.minWidth;
-        contentWrap.style.margin = previousContent.margin;
-        contentWrap.style.padding = previousContent.padding;
-      }
     };
   }, [cardUi, characterId, parsed.cleanText]);
 
