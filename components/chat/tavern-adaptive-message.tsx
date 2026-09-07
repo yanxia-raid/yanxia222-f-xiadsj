@@ -65,68 +65,77 @@ function buildCardHtmlDocument(html: string, css: string) {
         var b=document.body;
         if(!root || !b) return;
 
-        // 关键：不要像普通响应式网页一样给 body 加 max-width/overflow-wrap。
-        // ST 角色卡往往是固定画布/双栏布局；一旦先把它压成聊天气泡宽度，
-        // 原本的横向布局会重排成窄长单列，卡片高度就会暴涨。
-        b.style.transformOrigin="top left";
-        b.style.transform="none";
-        b.style.margin="0";
-        b.style.maxWidth="none";
-        b.style.minWidth="0";
-        b.style.overflow="visible";
-        b.style.position="fixed";
-        b.style.left="0";
-        b.style.top="0";
-        b.style.overflowWrap="normal";
-        b.style.wordBreak="normal";
-        b.style.width="max-content";
-
+        // 保持角色卡原本布局，只缩放整张画布。不要让 iframe 的视口
+        // 高度参与卡片高度计算，否则会产生大块空白或内容被截断。
+        root.style.margin="0";
+        root.style.padding="0";
         root.style.width="max-content";
         root.style.maxWidth="none";
-        root.style.overflow="hidden";
-        root.style.position="fixed";
+        root.style.height="auto";
+        root.style.minHeight="0";
+        root.style.overflow="visible";
+        root.style.position="relative";
         root.style.left="0";
         root.style.top="0";
 
-        // 先拿“原卡画布”的自然尺寸，再决定是否整体缩放。
-        naturalWidth=Math.max(
-          1,
-          Math.ceil(b.scrollWidth || 0),
-          Math.ceil(b.getBoundingClientRect().width || 0),
-          Math.ceil(root.scrollWidth || 0)
-        );
-        naturalHeight=Math.max(80, Math.ceil(b.scrollHeight || b.getBoundingClientRect().height || 0));
+        b.style.margin="0";
+        b.style.width="max-content";
+        b.style.maxWidth="none";
+        b.style.minWidth="0";
+        b.style.height="auto";
+        b.style.minHeight="0";
+        b.style.maxHeight="none";
+        b.style.overflow="visible";
+        b.style.position="relative";
+        b.style.left="0";
+        b.style.top="0";
+        b.style.transformOrigin="top left";
+        b.style.overflowWrap="normal";
+        b.style.wordBreak="normal";
 
-        // iframe 本身仍然占聊天区域的全部宽度；这里只缩放 iframe 内部的卡片。
-        var viewport=Math.max(1, window.innerWidth || root.clientWidth || 1);
-        fitScale=naturalWidth > viewport + 2 ? Math.max(0.35, Math.min(1, viewport / naturalWidth)) : 1;
-        b.style.transform=fitScale < 1 ? "scale("+fitScale+")" : "none";
+        b.style.transform="none";
+        root.style.transform="none";
+
+        var bodyRect=b.getBoundingClientRect();
+        var rootRect=root.getBoundingClientRect();
+        naturalWidth=Math.max(1, Math.ceil(bodyRect.width||0), Math.ceil(b.scrollWidth||0), Math.ceil(rootRect.width||0), Math.ceil(root.scrollWidth||0));
+        naturalHeight=Math.max(1, Math.ceil(bodyRect.height||0), Math.ceil(b.scrollHeight||0), Math.ceil(rootRect.height||0), Math.ceil(root.scrollHeight||0));
+
+        var viewport=Math.max(1, window.innerWidth||root.clientWidth||1);
+        fitScale=naturalWidth>viewport+1 ? Math.max(0.35, Math.min(1, viewport/naturalWidth)) : 1;
+        b.style.transform=fitScale<0.9999 ? "scale("+fitScale+")" : "none";
       } catch (_) { fitScale=1; }
     };
     var send=function(){
-      var b=document.body;
-      if(!b) return;
+      if(!document.body) return;
       fitToViewport();
-      var rawHeight=Math.max(80, naturalHeight || b.scrollHeight || b.getBoundingClientRect().height || 0);
-      var h=Math.ceil(rawHeight * fitScale);
-      window.parent.postMessage({type:"_tavern_card_resize", h:Math.max(80, h)}, "*");
+      var h=Math.ceil(Math.max(1,naturalHeight)*fitScale);
+      window.parent.postMessage({type:"_tavern_card_resize", h:Math.max(40,h)}, "*");
     };
     window.TavernCardBridge.resize=send;
-    window.addEventListener("load", function(){send(); setTimeout(send,80); setTimeout(send,500); setTimeout(send,1500);});
-    window.addEventListener("resize", function(){setTimeout(send,0);});
+    var schedule=function(){
+      send();
+      requestAnimationFrame(function(){send();});
+      setTimeout(send,80);
+      setTimeout(send,250);
+      setTimeout(send,600);
+      setTimeout(send,1200);
+    };
+    window.addEventListener("load",schedule);
+    window.addEventListener("resize",schedule);
+    window.addEventListener("orientationchange",schedule);
+    document.addEventListener("DOMContentLoaded",schedule);
     if(window.ResizeObserver){
-      window.addEventListener("DOMContentLoaded", function(){
-        if(document.body) new ResizeObserver(function(){send();}).observe(document.body);
-      });
+      try {
+        new ResizeObserver(function(){schedule();}).observe(document.documentElement);
+        if(document.body) new ResizeObserver(function(){schedule();}).observe(document.body);
+      } catch (_) {}
     }
-    document.addEventListener("toggle", function(){setTimeout(send,50);}, true);
-    // 固定沙盒内画布，避免 iOS 在 iframe 中把角色卡当成可平移/滚动网页。
-    document.addEventListener("touchmove", function(e){
-      try { if(e.cancelable) e.preventDefault(); } catch (_) {}
-    }, {passive:false});
-    document.addEventListener("wheel", function(e){
-      try { e.preventDefault(); } catch (_) {}
-    }, {passive:false});
+    document.addEventListener("toggle",function(){setTimeout(send,50);},true);
+
+    // 固定 iframe 内页面，不让沙盒自身滚动/平移；按钮和 JS 交互仍保留。
+    document.addEventListener("touchmove",function(e){try{if(e.cancelable)e.preventDefault();}catch(_){ }},{passive:false});
+    document.addEventListener("wheel",function(e){try{e.preventDefault();}catch(_){ }},{passive:false});
   } catch (_) {}
 })();<\/script>`;
 
@@ -138,8 +147,8 @@ function buildCardHtmlDocument(html: string, css: string) {
     let doc = trimmed;
     const responsiveBlock = `<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style data-tavern-responsive>
-html,body{margin:0;padding:0;overflow:hidden !important;width:100%;height:100%;}
-body{box-sizing:border-box;position:fixed;left:0;top:0;}
+html,body{margin:0 !important;padding:0 !important;width:max-content !important;max-width:none !important;height:auto !important;min-height:0 !important;overflow:visible !important;}
+body{box-sizing:border-box !important;position:relative !important;left:0 !important;top:0 !important;}
 </style>`;
     if (/<\/head>/i.test(doc)) {
       doc = doc.replace(/<\/head>/i, `${responsiveBlock}${cssBlock}</head>`);
@@ -151,7 +160,7 @@ body{box-sizing:border-box;position:fixed;left:0;top:0;}
   }
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${cssBlock}
-<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden !important;width:100%;height:100%;}body{box-sizing:border-box;position:fixed;left:0;top:0;}</style>
+<style>html,body{margin:0 !important;padding:0 !important;background:transparent;overflow:visible !important;width:max-content !important;height:auto !important;min-height:0 !important;}body{box-sizing:border-box !important;position:relative !important;left:0 !important;top:0 !important;}</style>
 </head><body>${trimmed}${actionBridge}</body></html>`;
 }
 
@@ -189,7 +198,7 @@ function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css:
         onPointerUp={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
-        style={{ height, width: "100%", border: 0, display: "block", background: "transparent", pointerEvents: "auto", touchAction: "none", overflow: "hidden" }}
+        style={{ height, width: "100%", border: 0, display: "block", background: "transparent", pointerEvents: "auto", overflow: "hidden" }}
       />
     </div>
   );
