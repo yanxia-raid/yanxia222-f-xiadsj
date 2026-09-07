@@ -132,10 +132,6 @@ function buildCardHtmlDocument(html: string, css: string) {
       } catch (_) {}
     }
     document.addEventListener("toggle",function(){setTimeout(send,50);},true);
-
-    // 固定 iframe 内页面，不让沙盒自身滚动/平移；按钮和 JS 交互仍保留。
-    document.addEventListener("touchmove",function(e){try{if(e.cancelable)e.preventDefault();}catch(_){ }},{passive:false});
-    document.addEventListener("wheel",function(e){try{e.preventDefault();}catch(_){ }},{passive:false});
   } catch (_) {}
 })();<\/script>`;
 
@@ -147,7 +143,7 @@ function buildCardHtmlDocument(html: string, css: string) {
     let doc = trimmed;
     const responsiveBlock = `<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style data-tavern-responsive>
-html{margin:0 !important;padding:0 !important;background:transparent !important;}html,body{margin:0 !important;padding:0 !important;width:max-content !important;max-width:none !important;height:auto !important;min-height:0 !important;overflow:visible !important;}
+html{margin:0 !important;padding:0 !important;background:transparent !important;}html,body{margin:0 !important;padding:0 !important;width:max-content !important;max-width:none !important;height:auto !important;min-height:0 !important;overflow:hidden !important;overscroll-behavior:none !important;}
 body{box-sizing:border-box !important;position:relative !important;left:0 !important;top:0 !important;}
 </style>`;
     if (/<\/head>/i.test(doc)) {
@@ -160,40 +156,19 @@ body{box-sizing:border-box !important;position:relative !important;left:0 !impor
   }
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${cssBlock}
-<style>html{margin:0 !important;padding:0 !important;background:transparent !important;}html,body{margin:0 !important;padding:0 !important;background:transparent;overflow:visible !important;width:max-content !important;height:auto !important;min-height:0 !important;}body{box-sizing:border-box !important;position:relative !important;left:0 !important;top:0 !important;}</style>
+<style>html{margin:0 !important;padding:0 !important;background:transparent !important;}html,body{margin:0 !important;padding:0 !important;background:transparent;overflow:hidden !important;overscroll-behavior:none !important;width:max-content !important;height:auto !important;min-height:0 !important;}body{box-sizing:border-box !important;position:relative !important;left:0 !important;top:0 !important;}</style>
 </head><body>${trimmed}${actionBridge}</body></html>`;
 }
 
 function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css: string; onActionSelect?: (text: string) => void }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(100);
-  const [surfaceWidth, setSurfaceWidth] = useState<number | null>(null);
   const srcDoc = useMemo(() => buildCardHtmlDocument(html, css), [html, css]);
 
   useEffect(() => setHeight(100), [srcDoc]);
 
   // 角色卡不再受 70% 聊天气泡宽度限制。
   // 直接读取消息行宽度，并按照原生状态栏的“左右留出约 64px”规则给卡片可用宽度。
-  useEffect(() => {
-    const updateWidth = () => {
-      const iframe = iframeRef.current;
-      const row = iframe?.closest?.(".chat-msg-wrapper") as HTMLElement | null;
-      if (!row) return;
-      const w = Math.floor(row.getBoundingClientRect().width || 0);
-      if (w > 80) setSurfaceWidth(Math.max(80, w - 64));
-    };
-    updateWidth();
-    const iframe = iframeRef.current;
-    const row = iframe?.closest?.(".chat-msg-wrapper") as HTMLElement | null;
-    const ro = typeof ResizeObserver !== "undefined" && row ? new ResizeObserver(updateWidth) : null;
-    if (ro && row) ro.observe(row);
-    window.addEventListener("resize", updateWidth);
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener("resize", updateWidth);
-    };
-  }, [srcDoc]);
-
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (!e.data || typeof e.data !== "object") return;
@@ -214,13 +189,13 @@ function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css:
       className="tavern-card-html-surface"
       data-tavern-card-html="true"
       style={{
-        margin: 0,
+        // 卡片作为“系统消息”独立占一行；宽度参考原生状态栏区域，
+        // 不再跟随角色头像后的 70% 气泡宽度。
+        margin: "0 0 0 52px",
         padding: 0,
         background: "transparent",
         overflow: "visible",
-        // 聊天气泡本身最多只有 70% 宽；角色卡不能跟着这个宽度被锁死。
-        // 这里向外撑到消息行可用区域，宽度正好参考原生状态栏。
-        width: surfaceWidth ? `${surfaceWidth}px` : "calc(100% / 0.7)",
+        width: "calc(100% - 64px)",
         maxWidth: "none",
         lineHeight: 0,
         position: "relative",
@@ -232,6 +207,7 @@ function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css:
         className="tavern-card-html-frame"
         title="角色卡自定义界面"
         sandbox="allow-scripts allow-forms allow-modals allow-popups"
+        scrolling="no"
         srcDoc={srcDoc}
         onPointerDown={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
@@ -275,36 +251,82 @@ export function TavernAdaptiveMessage({ characterId, content, render, onActionSe
   const cardCss = useMemo(() => card ? getCardCss(card) : "", [card]);
   const cardUi = hasCardHtml(parsed.cleanText);
 
-  // HTML 角色卡本身就是独立视觉面，不再套一层聊天气泡。
-  // 这里直接把宿主气泡变成透明壳，避免白底/圆角/内边距出现在卡片四周。
+  // HTML 角色卡直接占用“系统消息”式的整行区域：
+  // - 隐藏角色头像占位
+  // - 去掉 70% 的内容列限制
+  // - 内容列改成整行宽度
+  // - 卡片自身再按原生状态栏的约 52px 左偏移 / 64px 总留白计算最大宽度
+  // 只在当前消息确实是角色卡 HTML 时操作，并且只沿当前消息 DOM 向上查找，
+  // 不会影响朋友圈、其他消息或全局 CSS。
   useEffect(() => {
     if (!cardUi) return;
-    const host = adaptiveRef.current?.closest('[data-ui^="bubble-"]') as HTMLElement | null;
-    if (!host) return;
-    const previous = {
-      background: host.style.background,
-      border: host.style.border,
-      boxShadow: host.style.boxShadow,
-      padding: host.style.padding,
-      borderRadius: host.style.borderRadius,
-      backdropFilter: host.style.backdropFilter,
-      WebkitBackdropFilter: host.style.WebkitBackdropFilter,
+
+    const root = adaptiveRef.current;
+    const row = root?.closest(".chat-msg-wrapper") as HTMLElement | null;
+    if (!row) return;
+
+    const contentWrap = root?.closest(".chat-msg-content-wrap") as HTMLElement | null;
+    const avatar = row.querySelector(":scope > .chat-msg-avatar") as HTMLElement | null;
+
+    const previousRow = {
+      display: row.style.display,
+      width: row.style.width,
+      maxWidth: row.style.maxWidth,
+      alignItems: row.style.alignItems,
+      gap: row.style.gap,
     };
-    host.style.background = "transparent";
-    host.style.border = "none";
-    host.style.boxShadow = "none";
-    host.style.padding = "0";
-    host.style.borderRadius = "0";
-    host.style.backdropFilter = "none";
-    host.style.WebkitBackdropFilter = "none";
+    const previousContent = contentWrap ? {
+      width: contentWrap.style.width,
+      maxWidth: contentWrap.style.maxWidth,
+      flex: contentWrap.style.flex,
+      minWidth: contentWrap.style.minWidth,
+      margin: contentWrap.style.margin,
+      padding: contentWrap.style.padding,
+    } : null;
+    const previousAvatar = avatar ? {
+      display: avatar.style.display,
+    } : null;
+
+    row.dataset.tavernStandaloneCardRow = "true";
+    row.style.display = "block";
+    row.style.width = "100%";
+    row.style.maxWidth = "none";
+    row.style.alignItems = "stretch";
+    row.style.gap = "0";
+
+    if (avatar) avatar.style.display = "none";
+
+    if (contentWrap) {
+      contentWrap.style.width = "100%";
+      contentWrap.style.maxWidth = "none";
+      contentWrap.style.flex = "none";
+      contentWrap.style.minWidth = "0";
+      contentWrap.style.margin = "0";
+      contentWrap.style.padding = "0";
+    }
+
     return () => {
-      host.style.background = previous.background;
-      host.style.border = previous.border;
-      host.style.boxShadow = previous.boxShadow;
-      host.style.padding = previous.padding;
-      host.style.borderRadius = previous.borderRadius;
-      host.style.backdropFilter = previous.backdropFilter;
-      host.style.WebkitBackdropFilter = previous.WebkitBackdropFilter;
+      if (row.dataset.tavernStandaloneCardRow === "true") {
+        delete row.dataset.tavernStandaloneCardRow;
+      }
+      row.style.display = previousRow.display;
+      row.style.width = previousRow.width;
+      row.style.maxWidth = previousRow.maxWidth;
+      row.style.alignItems = previousRow.alignItems;
+      row.style.gap = previousRow.gap;
+
+      if (avatar && previousAvatar) {
+        avatar.style.display = previousAvatar.display;
+      }
+
+      if (contentWrap && previousContent) {
+        contentWrap.style.width = previousContent.width;
+        contentWrap.style.maxWidth = previousContent.maxWidth;
+        contentWrap.style.flex = previousContent.flex;
+        contentWrap.style.minWidth = previousContent.minWidth;
+        contentWrap.style.margin = previousContent.margin;
+        contentWrap.style.padding = previousContent.padding;
+      }
     };
   }, [cardUi, characterId, parsed.cleanText]);
 
