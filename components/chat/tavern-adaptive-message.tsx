@@ -127,12 +127,12 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
       const rect = canvas.getBoundingClientRect();
       const naturalWidth = Math.max(1, Math.ceil(rect.width), canvas.scrollWidth);
       const naturalHeight = Math.max(1, Math.ceil(canvas.getBoundingClientRect().height), canvas.scrollHeight);
-      const scale = naturalWidth > available ? Math.min(1, available / naturalWidth) : 1;
+      const scale = naturalWidth > 0 ? available / naturalWidth : 1;
 
       canvas.style.transformOrigin = "top center";
       canvas.style.transform = scale < 0.9999 ? `scale(${scale})` : "none";
-      canvas.style.marginLeft = "auto";
-      canvas.style.marginRight = "auto";
+      canvas.style.marginLeft = "0";
+      canvas.style.marginRight = "0";
       canvas.style.marginBottom = scale < 0.9999 ? `${-(naturalHeight * (1 - scale))}px` : "0px";
       setLayout({ width: Math.ceil(naturalWidth * scale), height: Math.max(40, Math.ceil(naturalHeight * scale)), scale });
     };
@@ -163,9 +163,9 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
       ref={hostRef}
       data-tavern-card-html-host="true"
       style={{
-        width: "calc(100% - 104px)",
-        maxWidth: "calc(100% - 104px)",
-        margin: "0 auto",
+        width: "100%",
+        maxWidth: "100%",
+        margin: 0,
         padding: 0,
         border: 0,
         outline: "none",
@@ -177,7 +177,7 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
         position: "relative",
         zIndex: 2,
         display: "flex",
-        justifyContent: "center",
+        justifyContent: "flex-start",
         alignItems: "flex-start",
       }}
     >
@@ -185,7 +185,7 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
         className="tavern-card-html-surface"
         data-tavern-card-html="true"
         style={{
-          width: Math.max(1, layout.width) + 16,
+          width: "100%",
           maxWidth: "100%",
           margin: 0,
           padding: "7px 8px",
@@ -202,7 +202,7 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
           height: layout.height + 14,
           position: "relative",
           display: "flex",
-          justifyContent: "center",
+          justifyContent: "flex-start",
           alignItems: "flex-start",
           boxShadow: "inset 0 0 0 1px rgba(255,255,255,.12), 0 6px 20px rgba(0,0,0,.07)",
         }}
