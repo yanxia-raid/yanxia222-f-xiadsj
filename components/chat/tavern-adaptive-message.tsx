@@ -212,7 +212,7 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
           className="tavern-card-html-canvas"
           style={{
             display: "inline-block",
-            width: "fit-content",
+            width: "100%",
             maxWidth: "none",
             margin: 0,
             padding: 0,
