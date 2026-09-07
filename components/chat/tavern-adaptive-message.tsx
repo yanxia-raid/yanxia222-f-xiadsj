@@ -74,13 +74,19 @@ function buildCardHtmlDocument(html: string, css: string) {
         b.style.maxWidth="none";
         b.style.minWidth="0";
         b.style.overflow="visible";
+        b.style.position="fixed";
+        b.style.left="0";
+        b.style.top="0";
         b.style.overflowWrap="normal";
         b.style.wordBreak="normal";
         b.style.width="max-content";
 
         root.style.width="max-content";
         root.style.maxWidth="none";
-        root.style.overflow="visible";
+        root.style.overflow="hidden";
+        root.style.position="fixed";
+        root.style.left="0";
+        root.style.top="0";
 
         // 先拿“原卡画布”的自然尺寸，再决定是否整体缩放。
         naturalWidth=Math.max(
@@ -114,6 +120,13 @@ function buildCardHtmlDocument(html: string, css: string) {
       });
     }
     document.addEventListener("toggle", function(){setTimeout(send,50);}, true);
+    // 固定沙盒内画布，避免 iOS 在 iframe 中把角色卡当成可平移/滚动网页。
+    document.addEventListener("touchmove", function(e){
+      try { if(e.cancelable) e.preventDefault(); } catch (_) {}
+    }, {passive:false});
+    document.addEventListener("wheel", function(e){
+      try { e.preventDefault(); } catch (_) {}
+    }, {passive:false});
   } catch (_) {}
 })();<\/script>`;
 
@@ -125,8 +138,8 @@ function buildCardHtmlDocument(html: string, css: string) {
     let doc = trimmed;
     const responsiveBlock = `<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style data-tavern-responsive>
-html,body{margin:0;padding:0;}
-body{box-sizing:border-box;}
+html,body{margin:0;padding:0;overflow:hidden !important;width:100%;height:100%;}
+body{box-sizing:border-box;position:fixed;left:0;top:0;}
 </style>`;
     if (/<\/head>/i.test(doc)) {
       doc = doc.replace(/<\/head>/i, `${responsiveBlock}${cssBlock}</head>`);
@@ -138,7 +151,7 @@ body{box-sizing:border-box;}
   }
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${cssBlock}
-<style>html,body{margin:0;padding:0;background:transparent;}body{box-sizing:border-box;}</style>
+<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden !important;width:100%;height:100%;}body{box-sizing:border-box;position:fixed;left:0;top:0;}</style>
 </head><body>${trimmed}${actionBridge}</body></html>`;
 }
 
@@ -176,7 +189,7 @@ function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css:
         onPointerUp={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
-        style={{ height, width: "100%", border: 0, display: "block", background: "transparent", pointerEvents: "auto", touchAction: "auto" }}
+        style={{ height, width: "100%", border: 0, display: "block", background: "transparent", pointerEvents: "auto", touchAction: "none", overflow: "hidden" }}
       />
     </div>
   );
