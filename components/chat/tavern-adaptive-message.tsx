@@ -69,12 +69,12 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
 
     canvas.innerHTML = "";
     canvas.style.transform = "none";
-    canvas.style.width = "fit-content";
+    canvas.style.width = "100%";
     canvas.style.maxWidth = "none";
     canvas.style.height = "auto";
     canvas.style.minHeight = "0";
     canvas.style.display = "inline-block";
-    canvas.style.transformOrigin = "top center";
+    canvas.style.transformOrigin = "top left";
 
     const style = document.createElement("style");
     style.setAttribute("data-tavern-card-css", "true");
@@ -85,9 +85,33 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
     content.setAttribute("data-tavern-card-content", "true");
     content.innerHTML = source.body;
     content.style.display = "inline-block";
-    content.style.width = "fit-content";
+    content.style.width = "100%";
     content.style.maxWidth = "none";
     content.style.minWidth = "0";
+
+    // 强制卡片内容响应聊天区域宽度：不做等比例缩放，而是让根容器直接自适应 100%。
+    const responsiveStyle = document.createElement("style");
+    responsiveStyle.setAttribute("data-tavern-responsive-width", "true");
+    responsiveStyle.textContent = `
+      [data-tavern-card-content] {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+      }
+      [data-tavern-card-content] > * {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      [data-tavern-card-content] img,
+      [data-tavern-card-content] video,
+      [data-tavern-card-content] canvas,
+      [data-tavern-card-content] svg,
+      [data-tavern-card-content] iframe {
+        max-width: 100% !important;
+      }
+    `;
+    canvas.appendChild(responsiveStyle);
     canvas.appendChild(content);
 
     // innerHTML 不会自动执行 script；重新创建节点以保留角色卡自己的交互。
@@ -129,7 +153,7 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
       const naturalHeight = Math.max(1, Math.ceil(canvas.getBoundingClientRect().height), canvas.scrollHeight);
       const scale = naturalWidth > 0 ? available / naturalWidth : 1;
 
-      canvas.style.transformOrigin = "top center";
+      canvas.style.transformOrigin = "top left";
       canvas.style.transform = scale < 0.9999 ? `scale(${scale})` : "none";
       canvas.style.marginLeft = "0";
       canvas.style.marginRight = "0";
