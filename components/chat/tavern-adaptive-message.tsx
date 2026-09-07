@@ -57,46 +57,51 @@ function buildCardHtmlDocument(html: string, css: string) {
       }
     }, true);
     var fitScale=1;
+    var naturalWidth=0;
+    var naturalHeight=0;
     var fitToViewport=function(){
       try {
         var root=document.documentElement;
         var b=document.body;
         if(!root || !b) return;
+
+        // 关键：不要像普通响应式网页一样给 body 加 max-width/overflow-wrap。
+        // ST 角色卡往往是固定画布/双栏布局；一旦先把它压成聊天气泡宽度，
+        // 原本的横向布局会重排成窄长单列，卡片高度就会暴涨。
         b.style.transformOrigin="top left";
         b.style.transform="none";
-        b.style.marginRight="0";
-        b.style.overflowX="hidden";
+        b.style.margin="0";
+        b.style.maxWidth="none";
+        b.style.minWidth="0";
+        b.style.overflow="visible";
+        b.style.overflowWrap="normal";
+        b.style.wordBreak="normal";
+        b.style.width="max-content";
 
-        // 聊天气泡比 ST 角色卡的原始画布窄时，必须“整体缩放”，
-        // 而不是把 body 拉成 162% 宽再重新排版。后者会让原本的双栏
-        // /固定布局塌成一条窄列，文字大量换行，最终表现为“卡片过长”。
-        var viewport=Math.max(1, root.clientWidth || b.clientWidth || window.innerWidth || 1);
-        var content=Math.max(
-          root.scrollWidth || 0,
-          b.scrollWidth || 0,
+        root.style.width="max-content";
+        root.style.maxWidth="none";
+        root.style.overflow="visible";
+
+        // 先拿“原卡画布”的自然尺寸，再决定是否整体缩放。
+        naturalWidth=Math.max(
+          1,
+          Math.ceil(b.scrollWidth || 0),
           Math.ceil(b.getBoundingClientRect().width || 0),
-          viewport
+          Math.ceil(root.scrollWidth || 0)
         );
-        fitScale=content > viewport + 2 ? Math.max(0.45, Math.min(1, viewport / content)) : 1;
+        naturalHeight=Math.max(80, Math.ceil(b.scrollHeight || b.getBoundingClientRect().height || 0));
 
-        // 保留角色卡自己的原始横向布局，只缩放整个页面。
-        // 不设置百分比宽度，避免缩放后触发二次重排导致高度暴增。
-        if(fitScale < 1){
-          b.style.width=content+"px";
-          b.style.maxWidth="none";
-          b.style.transform="scale("+fitScale+")";
-        }else{
-          b.style.width="";
-          b.style.maxWidth="100%";
-          b.style.transform="none";
-        }
+        // iframe 本身仍然占聊天区域的全部宽度；这里只缩放 iframe 内部的卡片。
+        var viewport=Math.max(1, window.innerWidth || root.clientWidth || 1);
+        fitScale=naturalWidth > viewport + 2 ? Math.max(0.35, Math.min(1, viewport / naturalWidth)) : 1;
+        b.style.transform=fitScale < 1 ? "scale("+fitScale+")" : "none";
       } catch (_) { fitScale=1; }
     };
     var send=function(){
       var b=document.body;
       if(!b) return;
       fitToViewport();
-      var rawHeight=Math.max(80, b.scrollHeight || b.getBoundingClientRect().height || 0);
+      var rawHeight=Math.max(80, naturalHeight || b.scrollHeight || b.getBoundingClientRect().height || 0);
       var h=Math.ceil(rawHeight * fitScale);
       window.parent.postMessage({type:"_tavern_card_resize", h:Math.max(80, h)}, "*");
     };
@@ -120,9 +125,8 @@ function buildCardHtmlDocument(html: string, css: string) {
     let doc = trimmed;
     const responsiveBlock = `<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style data-tavern-responsive>
-html{width:100%;max-width:100%;margin:0;padding:0;overflow-x:hidden;}
-body{max-width:100%;min-width:0;box-sizing:border-box;overflow-x:hidden;overflow-wrap:anywhere;}
-img,video,canvas,svg{max-width:100%;height:auto;}
+html,body{margin:0;padding:0;}
+body{box-sizing:border-box;}
 </style>`;
     if (/<\/head>/i.test(doc)) {
       doc = doc.replace(/<\/head>/i, `${responsiveBlock}${cssBlock}</head>`);
@@ -134,7 +138,7 @@ img,video,canvas,svg{max-width:100%;height:auto;}
   }
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${cssBlock}
-<style>html,body{margin:0;padding:0;width:100%;min-height:0;max-width:100%;background:transparent;overflow-x:hidden;}body{box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;}img,video,svg,canvas,table{max-width:100%;}button,input,select,textarea{max-width:100%;}</style>
+<style>html,body{margin:0;padding:0;background:transparent;}body{box-sizing:border-box;}</style>
 </head><body>${trimmed}${actionBridge}</body></html>`;
 }
 
