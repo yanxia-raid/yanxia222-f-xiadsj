@@ -163,9 +163,9 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
       ref={hostRef}
       data-tavern-card-html-host="true"
       style={{
-        width: "100%",
-        maxWidth: "100%",
-        margin: 0,
+        width: "calc(100% - 104px)",
+        maxWidth: "calc(100% - 104px)",
+        margin: "0 auto",
         padding: 0,
         border: 0,
         outline: "none",
