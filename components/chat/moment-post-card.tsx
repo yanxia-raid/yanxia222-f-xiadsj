@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { MomentPost, MomentComment } from "@/lib/moments-types";
 import { BilingualTextBlock, MediaImageWithPreview } from "@/components/chat/message-bubble";
+import { TavernAdaptiveMessage } from "@/components/chat/tavern-adaptive-message";
 import { MediaPreviewOverlay } from "@/components/chat/media-preview-overlay";
 import {
     loadMomentComments,
@@ -319,10 +320,16 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
 
             {/* Text content */}
             <div className="feed-post-content ts-16 leading-[1.75] text-[var(--c-text-title)] whitespace-pre-wrap break-words mb-3 w-full">
-                <BilingualTextBlock
-                    text={post.content}
-                    mode="plain"
-                    defaultExpanded={defaultTranslationExpanded}
+                <TavernAdaptiveMessage
+                    characterId={post.authorType === "character" ? post.authorId : undefined}
+                    content={post.content}
+                    render={(adaptiveContent) => (
+                        <BilingualTextBlock
+                            text={adaptiveContent}
+                            mode="plain"
+                            defaultExpanded={defaultTranslationExpanded}
+                        />
+                    )}
                 />
             </div>
 

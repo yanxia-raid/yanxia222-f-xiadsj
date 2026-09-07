@@ -123,7 +123,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charNa
             if (msg.mediaType?.startsWith("plugin:")) {
                 return <PluginKindBubble msg={msg} kind={msg.mediaType.slice("plugin:".length)} />;
             }
-            const textBubble = <TavernAdaptiveMessage characterId={characterId} content={displayContent ?? msg.content} render={(adaptiveContent) => <TextBubble content={adaptiveContent} onActionSelect={onActionSelect} defaultTranslationExpanded={defaultTranslationExpanded} />} />;
+            const textBubble = <TavernAdaptiveMessage characterId={characterId} content={displayContent ?? msg.content} onActionSelect={onActionSelect} render={(adaptiveContent) => <TextBubble content={adaptiveContent} onActionSelect={onActionSelect} defaultTranslationExpanded={defaultTranslationExpanded} />} />;
             return (
                 <>
                     {textBubble}
@@ -208,9 +208,21 @@ export function isStandaloneHtmlPreviewContent(content: string): boolean {
     if (!cleaned) return false;
 
     const strippedCodeBlocks = cleaned.replace(/```[\s\S]*?```/g, "").replace(/`[^`]+`/g, "");
+    // SillyTavern card regex replacements are sanitized before this renderer runs,
+    // so the original <script> marker may already be gone. Full-document card UIs
+    // must still be treated as isolated HTML; otherwise their <style> block is fed
+    // into ReactMarkdown and can leak CSS into the surrounding chat layout.
+    const hasStyle = /<style\b[\s\S]*?<\/style>/i.test(strippedCodeBlocks);
+    const hasFullDocument = /<!doctype\s+html\b|<html\b|<head\b|<body\b/i.test(strippedCodeBlocks);
+    if (/^\s*</.test(strippedCodeBlocks) && hasStyle && hasFullDocument) {
+        return true;
+    }
+
+    // Keep the old detection path for raw interactive HTML that still contains
+    // its own script block (for non-Tavern messages).
     if (/^\s*</.test(strippedCodeBlocks)
         && /<script\b[\s\S]*?<\/script>/i.test(strippedCodeBlocks)
-        && /<style\b[\s\S]*?<\/style>/i.test(strippedCodeBlocks)) {
+        && hasStyle) {
         return true;
     }
 
