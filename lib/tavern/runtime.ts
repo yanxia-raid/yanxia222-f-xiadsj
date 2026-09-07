@@ -2,8 +2,9 @@ import type { Character } from '@/lib/character-types';
 import type { RegexConfig, RegexRule, WorldBookConfig, WorldBookEntry } from '@/lib/settings-types';
 import type { TavernCharacterCard, TavernRegexScript, TavernLoreEntry } from './types';
 import { getRegexScripts } from './parser';
+import { readDepthPrompt } from './adaptive';
 
-/** Convert an imported ST regex script to this app's native regex shape without dropping unknown fields. */
+/** Convert an imported ST regex script to the app's native shape without dropping its source fields. */
 export function tavernRegexToNative(script: TavernRegexScript, index: number): RegexRule {
   const placement = Array.isArray(script.placement) ? script.placement.filter(v => Number.isFinite(Number(v))).map(Number) : [2];
   return {
@@ -30,33 +31,42 @@ export function getTavernRegexConfigs(card: TavernCharacterCard): RegexConfig[] 
     id: `tavern:${card.data.name}`,
     name: `${card.data.name} · ST Regex`,
     description: 'Imported from SillyTavern character card extensions.regex_scripts',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: Date.now(), updatedAt: Date.now(),
     rules: scripts.map(tavernRegexToNative),
   }];
 }
 
+function extOf(entry: TavernLoreEntry) {
+  return entry.extensions && typeof entry.extensions === 'object' ? entry.extensions : {};
+}
+function val(entry: TavernLoreEntry, ...keys: string[]) {
+  const ext = extOf(entry);
+  for (const key of keys) if (entry[key] !== undefined) return entry[key];
+  for (const key of keys) if (ext[key] !== undefined) return ext[key];
+  return undefined;
+}
+
 function toNativeEntry(entry: TavernLoreEntry, index: number): WorldBookEntry {
   const keys = Array.isArray(entry.keys) ? entry.keys.map(String) : [];
-  const secondary = Array.isArray(entry.secondary_keys) ? entry.secondary_keys.map(String) : [];
+  const secondary = Array.isArray(val(entry, 'secondary_keys', 'secondaryKeys', 'keysecondary')) ? (val(entry, 'secondary_keys', 'secondaryKeys', 'keysecondary') as unknown[]).map(String) : [];
   return {
     uid: String(entry.uid ?? `tavern_${index}`),
     key: keys.join(', '),
     content: String(entry.content ?? ''),
     comment: String(entry.comment ?? entry.name ?? ''),
-    use_regex: Boolean(entry.use_regex),
+    use_regex: Boolean(val(entry, 'use_regex', 'useRegex')),
     disable: entry.enabled === false || entry.disable === true,
-    constant: Boolean(entry.constant),
-    position: (entry.position ?? 'before_char') as WorldBookEntry['position'],
-    depth: typeof entry.depth === 'number' ? entry.depth : undefined,
-    probability: typeof entry.probability === 'number' ? entry.probability : undefined,
-    useProbability: typeof entry.probability === 'number',
-    role: typeof entry.role === 'number' ? entry.role : undefined,
-    insertion_order: Number(entry.insertion_order ?? entry.order ?? entry.priority ?? 50),
-    // Preserve ST-specific activation data for the runtime adapter.
+    constant: Boolean(val(entry, 'constant')),
+    position: (val(entry, 'position') ?? 'before_char') as WorldBookEntry['position'],
+    depth: typeof val(entry, 'depth') === 'number' ? Number(val(entry, 'depth')) : undefined,
+    probability: typeof val(entry, 'probability') === 'number' ? Number(val(entry, 'probability')) : undefined,
+    useProbability: typeof val(entry, 'probability') === 'number',
+    role: typeof val(entry, 'role') === 'number' ? Number(val(entry, 'role')) : undefined,
+    insertion_order: Number(val(entry, 'insertion_order', 'order', 'sortOrder', 'priority') ?? 50),
     ...(secondary.length ? { tavernSecondaryKeys: secondary } : {}),
-    ...(typeof entry.selective === 'boolean' ? { tavernSelective: entry.selective } : {}),
-    ...(typeof entry.case_sensitive === 'boolean' ? { tavernCaseSensitive: entry.case_sensitive } : {}),
+    ...(typeof val(entry, 'selective') === 'boolean' ? { tavernSelective: val(entry, 'selective') } : {}),
+    ...(typeof val(entry, 'case_sensitive') === 'boolean' ? { tavernCaseSensitive: val(entry, 'case_sensitive') } : {}),
+    ...(typeof val(entry, 'group', 'groupName') === 'string' ? { tavernGroup: val(entry, 'group', 'groupName') } : {}),
     ...(entry.extensions && typeof entry.extensions === 'object' ? { tavernExtensions: entry.extensions } : {}),
   } as WorldBookEntry;
 }
@@ -68,8 +78,7 @@ export function getTavernWorldBookConfig(card: TavernCharacterCard): WorldBookCo
     id: `tavern:${card.data.name}`,
     name: String(book.name || `${card.data.name} · ST World Book`),
     description: String(book.description || 'Imported from SillyTavern character_book'),
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: Date.now(), updatedAt: Date.now(),
     entries: book.entries.map(toNativeEntry),
   };
 }
@@ -81,50 +90,60 @@ export function getTavernCard(character: Character): TavernCharacterCard | null 
   return card.data?.name ? card : null;
 }
 
-/**
- * Resolve character-owned ST runtime data without mutating global settings.
- * Regex rules are merged transiently for this character; the character book is
- * activated directly by the prompt assembler so ST secondary-key semantics are kept.
- */
-export function mergeTavernRuntimeConfig(
-  character: Character,
-  worldBooks: WorldBookConfig[],
-  regexes: RegexConfig[],
-): { worldBooks: WorldBookConfig[]; regexes: RegexConfig[]; card: TavernCharacterCard | null } {
+export function mergeTavernRuntimeConfig(character: Character, worldBooks: WorldBookConfig[], regexes: RegexConfig[]) {
   const card = getTavernCard(character);
-  if (!card) return { worldBooks, regexes, card: null };
+  if (!card) return { worldBooks, regexes, card: null as TavernCharacterCard | null };
   const tavernRegex = getTavernRegexConfigs(card);
   const existingRegexIds = new Set(regexes.map(x => x.id));
-  // The assembler injects the character-owned book with ST activation semantics.
-  // Do not also append it to the native list, otherwise it would be injected twice.
-  const mergedBooks = worldBooks;
-  const mergedRegexes = tavernRegex.length ? [...regexes, ...tavernRegex.filter(x => !existingRegexIds.has(x.id))] : regexes;
-  return { worldBooks: mergedBooks, regexes: mergedRegexes, card };
+  return {
+    // Character-owned book is activated directly by the assembler, preserving ST semantics.
+    worldBooks,
+    regexes: tavernRegex.length ? [...regexes, ...tavernRegex.filter(x => !existingRegexIds.has(x.id))] : regexes,
+    card,
+  };
 }
 
+/**
+ * Keep the card's own prose authoritative. We intentionally do not invent labels such as
+ * "Character Description:" or "Personality:" because many ST cards depend on their own XML/YAML/Markdown layout.
+ */
 export function buildCharacterOwnedTavernSystem(card: TavernCharacterCard, userName: string): string {
   const d = card.data;
-  const parts: string[] = [];
-  if (d.system_prompt?.trim()) parts.push(d.system_prompt.trim());
-  if (d.description?.trim()) parts.push(`Character Description:\n${d.description.trim()}`);
-  if (d.personality?.trim()) parts.push(`Personality:\n${d.personality.trim()}`);
-  if (d.scenario?.trim()) parts.push(`Scenario:\n${d.scenario.trim()}`);
-  if (d.creator_notes?.trim()) parts.push(`Creator Notes:\n${d.creator_notes.trim()}`);
-  if (d.mes_example?.trim()) parts.push(`Example Dialogue:\n${d.mes_example.trim()}`);
-  if (!parts.length) return '';
-  return parts.join('\n\n').replace(/\{\{char\}\}/gi, d.name).replace(/\{\{user\}\}/gi, userName);
+  const ext = (d.extensions || {}) as Record<string, unknown>;
+  const custom = typeof ext.system_prompt_template === 'string' ? ext.system_prompt_template : typeof ext.prompt_template === 'string' ? ext.prompt_template : '';
+  const expand = (s: string) => s
+    .replace(/{{\s*char\s*}}/gi, d.name)
+    .replace(/{{\s*user\s*}}/gi, userName);
+  if (custom.trim()) return expand(custom.trim());
+  return [d.system_prompt, d.description, d.personality, d.scenario, d.creator_notes]
+    .map(v => typeof v === 'string' ? expand(v).trim() : '')
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export function getTavernGreeting(card: TavernCharacterCard, alternateIndex = 0): string {
   const d = card.data;
   const alternates = Array.isArray(d.alternate_greetings) ? d.alternate_greetings.map(String).filter(Boolean) : [];
   const candidate = alternateIndex > 0 ? alternates[alternateIndex - 1] : d.first_mes;
-  return String(candidate || d.first_mes || '').replace(/\{\{char\}\}/gi, d.name).trim();
+  return String(candidate || d.first_mes || '')
+    .replace(/{{\s*char\s*}}/gi, d.name)
+    .trim();
 }
 
 export function buildCharacterOwnedTavernPostHistory(card: TavernCharacterCard, userName: string): string {
   return String(card.data.post_history_instructions || '')
-    .replace(/\{\{char\}\}/gi, card.data.name)
-    .replace(/\{\{user\}\}/gi, userName)
+    .replace(/{{\s*char\s*}}/gi, card.data.name)
+    .replace(/{{\s*user\s*}}/gi, userName)
+    .trim();
+}
+
+export function getTavernDepthPrompt(card: TavernCharacterCard, userName: string, persona = '') {
+  return readDepthPrompt(card, userName, persona);
+}
+
+export function getTavernExampleDialogue(card: TavernCharacterCard, userName: string) {
+  return String(card.data.mes_example || '')
+    .replace(/{{\s*char\s*}}/gi, card.data.name)
+    .replace(/{{\s*user\s*}}/gi, userName)
     .trim();
 }

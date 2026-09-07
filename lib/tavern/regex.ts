@@ -1,19 +1,40 @@
 import type { TavernRegexScript } from './types';
 
-export function applyTavernRegex(input: string, scripts: TavernRegexScript[], stage: 'input' | 'output' = 'output'): string {
+function parseRegex(source: string): RegExp | null {
+  try {
+    const m = source.match(/^\/(.*)\/([dgimsuvy]*)$/s);
+    return m ? new RegExp(m[1], m[2]) : new RegExp(source, 'g');
+  } catch { return null; }
+}
+
+function shouldRun(script: TavernRegexScript, stage: 'input' | 'output' | 'markdown', placement: number) {
+  if (script.disabled || !script.findRegex) return false;
+  const placements = Array.isArray(script.placement) ? script.placement.map(Number) : [2];
+  if (!placements.includes(placement)) return false;
+  if (stage === 'input') return script.promptOnly !== false || script.markdownOnly !== true;
+  if (stage === 'markdown') return script.markdownOnly !== false;
+  return script.promptOnly !== true || script.markdownOnly !== true;
+}
+
+/** Execute card regexes in the same conceptual stages as ST: prompt/input and output/display. */
+export function applyTavernRegex(
+  input: string,
+  scripts: TavernRegexScript[],
+  stage: 'input' | 'output' | 'markdown' = 'output',
+): string {
   let out = input;
+  const placement = stage === 'input' ? 1 : 2;
   for (const script of scripts) {
-    if (script.disabled || !script.findRegex) continue;
-    if (stage === 'input' && script.promptOnly === false) continue;
+    if (!shouldRun(script, stage, placement)) continue;
+    const re = parseRegex(String(script.findRegex || ''));
+    if (!re) continue;
+    let replacement = typeof script.replaceString === 'string' ? script.replaceString : '';
+    replacement = replacement.replace(/\{\{match\}\}/gi, '$&');
     try {
-      const source = script.findRegex;
-      const match = source.match(/^\/(.*)\/([dgimsuvy]*)$/s);
-      const re = match ? new RegExp(match[1], match[2]) : new RegExp(source, 'g');
-      const replacement = typeof script.replaceString === 'string' ? script.replaceString : '';
       out = out.replace(re, replacement);
-      for (const trim of script.trimStrings || []) out = out.replaceAll(trim, '');
+      for (const trim of script.trimStrings || []) out = out.replaceAll(String(trim), '');
     } catch {
-      // Preserve the script and skip only malformed runtime regexes.
+      // Preserve the original text if an individual card regex is malformed.
     }
   }
   return out;
