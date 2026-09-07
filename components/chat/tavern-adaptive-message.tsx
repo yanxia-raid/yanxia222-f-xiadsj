@@ -102,7 +102,7 @@ function buildCardHtmlDocument(html: string, css: string) {
         naturalHeight=Math.max(1, Math.ceil(bodyRect.height||0), Math.ceil(b.scrollHeight||0), Math.ceil(rootRect.height||0), Math.ceil(root.scrollHeight||0));
 
         var viewport=Math.max(1, window.innerWidth||root.clientWidth||1);
-        fitScale=naturalWidth>viewport+1 ? Math.max(0.35, Math.min(1, viewport/naturalWidth)) : 1;
+        fitScale=naturalWidth>viewport+1 ? Math.min(1, viewport/naturalWidth) : 1;
         b.style.transform=fitScale<0.9999 ? "scale("+fitScale+")" : "none";
       } catch (_) { fitScale=1; }
     };
@@ -147,7 +147,7 @@ function buildCardHtmlDocument(html: string, css: string) {
     let doc = trimmed;
     const responsiveBlock = `<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style data-tavern-responsive>
-html,body{margin:0 !important;padding:0 !important;width:max-content !important;max-width:none !important;height:auto !important;min-height:0 !important;overflow:visible !important;}
+html{margin:0 !important;padding:0 !important;background:transparent !important;}html,body{margin:0 !important;padding:0 !important;width:max-content !important;max-width:none !important;height:auto !important;min-height:0 !important;overflow:visible !important;}
 body{box-sizing:border-box !important;position:relative !important;left:0 !important;top:0 !important;}
 </style>`;
     if (/<\/head>/i.test(doc)) {
@@ -160,7 +160,7 @@ body{box-sizing:border-box !important;position:relative !important;left:0 !impor
   }
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${cssBlock}
-<style>html,body{margin:0 !important;padding:0 !important;background:transparent;overflow:visible !important;width:max-content !important;height:auto !important;min-height:0 !important;}body{box-sizing:border-box !important;position:relative !important;left:0 !important;top:0 !important;}</style>
+<style>html{margin:0 !important;padding:0 !important;background:transparent !important;}html,body{margin:0 !important;padding:0 !important;background:transparent;overflow:visible !important;width:max-content !important;height:auto !important;min-height:0 !important;}body{box-sizing:border-box !important;position:relative !important;left:0 !important;top:0 !important;}</style>
 </head><body>${trimmed}${actionBridge}</body></html>`;
 }
 
@@ -187,7 +187,7 @@ function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css:
   }, [onActionSelect]);
 
   return (
-    <div className="tavern-card-html-surface" data-tavern-card-html="true">
+    <div className="tavern-card-html-surface" data-tavern-card-html="true" style={{ margin: 0, padding: 0, background: "transparent", overflow: "hidden", width: "100%", lineHeight: 0 }}>
       <iframe
         ref={iframeRef}
         className="tavern-card-html-frame"
@@ -198,7 +198,7 @@ function TavernCardHtmlFrame({ html, css, onActionSelect }: { html: string; css:
         onPointerUp={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
-        style={{ height, width: "100%", border: 0, display: "block", background: "transparent", pointerEvents: "auto", overflow: "hidden" }}
+        style={{ height, width: "100%", margin: 0, padding: 0, border: 0, outline: "none", display: "block", background: "transparent", pointerEvents: "auto", overflow: "hidden", verticalAlign: "top" }}
       />
     </div>
   );
