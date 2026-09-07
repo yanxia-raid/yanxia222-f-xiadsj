@@ -17,8 +17,8 @@ import { formatCharacterRelationsForPrompt } from "./character-world-storage";
 import { buildCharacterTimeContext, buildGroupTimeContext, type CharacterTimeContext } from "./character-time";
 import { formatShoppingPaymentRequestHistory } from "./shopping-payment-request";
 import { buildGroupAdminBracketText } from "./group-admin";
-import { mergeTavernRuntimeConfig, buildCharacterOwnedTavernSystem, buildCharacterOwnedTavernPostHistory, getTavernGreeting } from "./tavern/runtime";
-import { activateCharacterBook, renderLoreEntries } from "./tavern/lorebook";
+import { mergeTavernRuntimeConfig, buildCharacterOwnedTavernSystem, buildCharacterOwnedTavernPostHistory, getTavernGreeting, getTavernDepthPrompt, getTavernExampleDialogue } from "./tavern/runtime";
+import { activateCharacterBookDetailed, getTavernLorePosition, getTavernLoreDepth } from "./tavern/lorebook";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
 export type LLMToolCallPayload = { id: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
@@ -770,25 +770,54 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
                 }
             }
 
-            // Character-book activation follows ST's primary/secondary-key rules.
-            const activatedTavernEntries = activateCharacterBook(
-                tavernCard.data.character_book,
-                recentHistoryStr,
-            );
-            const tavernLore = renderLoreEntries(activatedTavernEntries);
-            if (tavernLore) {
-                const loreEngine = new MacroEngine(character.name, resolvedUserName);
-                applyTimeContextToMacroEngine(loreEngine, promptTimeContext);
-                const expandedLore = postProcessTrim(loreEngine.expand(tavernLore)).trim();
-                if (expandedLore) {
-                    blocks.push({
-                        text: expandedLore,
-                        role: "system",
-                        depth: beforeHistoryDepth,
-                        order: -50,
-                        marker: "tavern:character_book",
-                    });
-                }
+            // Character-book activation follows the card's own ST/V3 rules: scan depth,
+            // primary + secondary keys, probability, groups and recursive scanning.
+            const activation = activateCharacterBookDetailed(tavernCard.data.character_book, recentHistoryStr);
+            const loreEngine = new MacroEngine(character.name, resolvedUserName);
+            applyTimeContextToMacroEngine(loreEngine, promptTimeContext);
+            let loreOrder = -50;
+            for (const entry of activation.entries) {
+                const rawContent = String(entry.content || '').trim();
+                if (!rawContent) continue;
+                const expandedLore = postProcessTrim(loreEngine.expand(rawContent)).trim();
+                if (!expandedLore) continue;
+                const position = getTavernLorePosition(entry);
+                const depth = position === 'at_depth' ? getTavernLoreDepth(entry) : beforeHistoryDepth;
+                // Outlet entries are preserved but only injected when the matching outlet macro
+                // is explicitly present in a preset. Otherwise they remain card data, as in ST.
+                if (position === 'outlet') continue;
+                blocks.push({
+                    text: expandedLore,
+                    role: typeof entry.role === 'number' ? (entry.role === 1 ? 'user' : entry.role === 2 ? 'assistant' : 'system') : 'system',
+                    depth,
+                    order: Number(entry.insertion_order ?? entry.order ?? loreOrder++),
+                    marker: `tavern:character_book:${String(entry.uid ?? loreOrder)}`,
+                });
+            }
+
+            // V3 depth_prompt is an explicit card-owned insertion, not a generic status block.
+            const depthPrompt = getTavernDepthPrompt(tavernCard, resolvedUserName, userIdentity?.bio || '');
+            if (depthPrompt) {
+                blocks.push({
+                    text: depthPrompt.prompt,
+                    role: depthPrompt.role,
+                    depth: depthPrompt.depth,
+                    order: -25,
+                    marker: 'tavern:depth_prompt',
+                });
+            }
+
+            // mes_example is kept as raw authored example material rather than rewritten into a
+            // synthetic template. It is injected before the live history.
+            const exampleDialogue = getTavernExampleDialogue(tavernCard, resolvedUserName);
+            if (exampleDialogue) {
+                blocks.push({
+                    text: exampleDialogue,
+                    role: 'system',
+                    depth: beforeHistoryDepth,
+                    order: -30,
+                    marker: 'tavern:mes_example',
+                });
             }
         }
 
