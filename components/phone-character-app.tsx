@@ -54,6 +54,7 @@ import { notifyMascotPageContext } from "@/lib/mascot-events";
 import { kvGet, kvSet } from "@/lib/kv-db";
 import { normalizeTimeZone } from "@/lib/character-time";
 import { parseTavernFile, tavernCardToCharacterData } from "@/lib/tavern/parser";
+import { TavernControlPanel } from "@/components/character/tavern-control-panel";
 
 type ViewType = "list" | "detail";
 
@@ -2338,6 +2339,8 @@ function CharArchiveView({
       ) : undefined}
     >
       {archiveFrame}
+
+      {!dummy && char.tavernCard && <TavernControlPanel char={char} />}
 
       {showSaveVersionConfirm && (
         <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/45 px-5" role="dialog" aria-modal="true" aria-label="保存角色卡">
