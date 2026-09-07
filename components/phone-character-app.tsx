@@ -2340,7 +2340,7 @@ function CharArchiveView({
     >
       {archiveFrame}
 
-      {!dummy && char.tavernCard && <TavernControlPanel char={char} />}
+      {!dummy && char.tavernCard && <TavernControlPanel char={char} onSaved={(updated) => updateChars(characters.map(c => c.id === updated.id ? updated : c))} />}
 
       {showSaveVersionConfirm && (
         <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/45 px-5" role="dialog" aria-modal="true" aria-label="保存角色卡">
