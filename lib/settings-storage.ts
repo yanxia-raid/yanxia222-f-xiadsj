@@ -969,6 +969,7 @@ export function resolveBinding(
         userIdentityId: global.userIdentityId,
         worldBookIds: global.worldBookIds ? [...global.worldBookIds] : undefined,
         regexIds: global.regexIds ? [...global.regexIds] : undefined,
+        statusBarId: global.statusBarId,
     };
 
     const applySlot = (slot: BindingSlot): void => {
@@ -978,6 +979,7 @@ export function resolveBinding(
         if (slot.userIdentityId) resolved.userIdentityId = slot.userIdentityId;
         if (slot.worldBookIds && slot.worldBookIds.length > 0) resolved.worldBookIds = [...slot.worldBookIds];
         if (slot.regexIds && slot.regexIds.length > 0) resolved.regexIds = [...slot.regexIds];
+        if (slot.statusBarId) resolved.statusBarId = slot.statusBarId;
     };
 
     if (!characterId) return resolved;

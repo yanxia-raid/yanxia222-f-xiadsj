@@ -152,6 +152,9 @@ export type TavernStatusBarConfig = SettingItemMeta & {
     sourceFormat?: string;
     raw: unknown;
     regexScripts?: Array<Record<string, unknown>>;
+    /** Native status template projected from the Tavern extension payload. */
+    template?: string;
+    templateKey?: string;
     tavernNative?: {
         kind: "statusbar";
         raw: unknown;
@@ -284,6 +287,8 @@ export type BindingSlot = {
     userIdentityId?: string;
     worldBookIds?: string[];
     regexIds?: string[];
+    /** Optional Tavern-compatible status bar binding. Single selection, cascades like preset. */
+    statusBarId?: string;
 };
 
 // Character binding: character defaults + per-app overrides
