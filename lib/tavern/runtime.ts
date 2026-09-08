@@ -93,10 +93,21 @@ export function getTavernCard(character: Character): TavernCharacterCard | null 
 export function mergeTavernRuntimeConfig(character: Character, worldBooks: WorldBookConfig[], regexes: RegexConfig[]) {
   const card = getTavernCard(character);
   if (!card) return { worldBooks, regexes, card: null as TavernCharacterCard | null };
-  const tavernRegex = getTavernRegexConfigs(card);
+
+  // Imported cards may now have their embedded resources materialized into the
+  // reusable phone libraries and bound through BindingManager. In that case the
+  // library copy is already present in `worldBooks` / `regexes`; do not inject a
+  // second copy from the card itself. Legacy cards without materialized refs keep
+  // the old direct-card fallback so existing saves do not change behavior.
+  const materialized = character.tavernResources;
+  const hasMaterializedWorldBook = Boolean(materialized?.worldBookId && worldBooks.some(w => w.id === materialized.worldBookId));
+  const hasMaterializedRegex = Boolean(materialized?.regexId && regexes.some(r => r.id === materialized.regexId));
+
+  const tavernRegex = hasMaterializedRegex ? [] : getTavernRegexConfigs(card);
   const existingRegexIds = new Set(regexes.map(x => x.id));
   return {
-    // Character-owned book is activated directly by the assembler, preserving ST semantics.
+    // Character-owned book is activated directly by the assembler only for legacy
+    // cards. Materialized resources are already supplied by the normal binding path.
     worldBooks,
     regexes: tavernRegex.length ? [...regexes, ...tavernRegex.filter(x => !existingRegexIds.has(x.id))] : regexes,
     card,

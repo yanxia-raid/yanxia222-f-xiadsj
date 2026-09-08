@@ -42,6 +42,23 @@ function secondaryKeys(entry: TavernLoreEntry) {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 }
 
+function selectiveLogic(entry: TavernLoreEntry) {
+  return Number(field(entry, 'selectiveLogic', 'selective_logic') ?? 0) || 0;
+}
+
+function triggers(entry: TavernLoreEntry) {
+  const value = field<unknown>(entry, 'triggers', 'trigger');
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function triggerSatisfied(entry: TavernLoreEntry, scanText: string) {
+  const list = triggers(entry);
+  if (!list.length) return true;
+  const cs = isCaseSensitive(entry);
+  const regex = isRegex(entry);
+  return list.some(k => matchesKey(scanText, k, regex, cs));
+}
+
 function isCaseSensitive(entry: TavernLoreEntry) {
   return field<boolean>(entry, 'case_sensitive', 'caseSensitive') === true;
 }
@@ -86,7 +103,14 @@ function activatedByKeys(entry: TavernLoreEntry, scanText: string) {
   const secondary = secondaryKeys(entry);
   if (!secondary.length) return true;
   if (!isSelective(entry)) return true;
-  return secondary.some(k => matchesKey(scanText, k, regex, cs));
+  const hits = secondary.map(k => matchesKey(scanText, k, regex, cs));
+  switch (selectiveLogic(entry)) {
+    case 1: return !hits.every(Boolean);
+    case 2: return !hits.some(Boolean);
+    case 3: return hits.every(Boolean);
+    case 0:
+    default: return hits.some(Boolean);
+  }
 }
 
 function weightedGroupPick(entries: TavernLoreEntry[]): TavernLoreEntry[] {
@@ -138,7 +162,7 @@ export function activateCharacterBookDetailed(
 
   for (; passes < (book.recursive_scanning ? 5 : 1); passes++) {
     const newly = book.entries.filter(entry =>
-      entryEnabled(entry) && !active.has(entry) && activatedByKeys(entry, workingText) && Math.random() * 100 < probability(entry),
+      entryEnabled(entry) && !active.has(entry) && triggerSatisfied(entry, workingText) && activatedByKeys(entry, workingText) && Math.random() * 100 < probability(entry),
     );
     const picked = weightedGroupPick(newly);
     if (!picked.length) break;
@@ -169,7 +193,11 @@ export function getTavernLorePosition(entry: TavernLoreEntry): 'before_char' | '
   if (raw === 'before_char' || raw === 'beforechar' || raw === '0') return 'before_char';
   if (raw === 'after_char' || raw === 'afterchar' || raw === '1') return 'after_char';
   if (raw === 'at_depth' || raw === 'depth' || raw === '4') return 'at_depth';
-  if (raw === 'outlet') return 'outlet';
+  if (raw === '2' || raw === 'before_an') return 'before_char';
+  if (raw === '3' || raw === 'after_an') return 'after_char';
+  if (raw === '5' || raw === 'before_em') return 'before_char';
+  if (raw === '6' || raw === 'after_em') return 'after_char';
+  if (raw === 'outlet' || raw === '7') return 'outlet';
   return 'unknown';
 }
 
@@ -179,4 +207,101 @@ export function getTavernLoreDepth(entry: TavernLoreEntry): number {
 
 export function getTavernLoreOutlet(entry: TavernLoreEntry): string {
   return String(field(entry, 'outlet', 'outletName') ?? '').trim();
+}
+
+/** Runtime activation for standalone/bound World Books. It intentionally mirrors
+ * the native fields retained by the adapter instead of collapsing them into the
+ * phone's simpler keyword model. */
+export function activateBoundWorldBook(
+  book: import('../settings-types').WorldBookConfig,
+  historyText: string,
+  options: { characterName?: string; recursive?: boolean; maxPasses?: number } = {},
+): import('../settings-types').WorldBookEntry[] {
+  const scanDepth = Math.max(1, Math.floor(Number(book.tavernScanDepth ?? 10) || 10));
+  const scanText = historyText.split(/\n/).slice(-scanDepth).join('\n');
+  const characterName = String(options.characterName || '').trim();
+  const active = new Map<import('../settings-types').WorldBookEntry, true>();
+  const maxPasses = Math.max(1, Math.min(32, Number(options.maxPasses ?? book.tavernMaxRecursionSteps ?? (book.tavernRecursiveScanning ? 8 : 1)) || 1));
+  let working = scanText;
+
+  const match = (text: string, key: string, regex: boolean, cs: boolean, whole: boolean) => {
+    if (!key) return false;
+    try {
+      if (regex) {
+        const m = key.match(/^\/(.*)\/([dgimsuvy]*)$/s);
+        const re = m ? new RegExp(m[1], m[2]) : new RegExp(key, cs ? '' : 'i');
+        return re.test(text);
+      }
+      const hay = cs ? text : text.toLocaleLowerCase();
+      const needle = cs ? key : key.toLocaleLowerCase();
+      if (!whole) return hay.includes(needle);
+      const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'iu').test(text);
+    } catch { return false; }
+  };
+
+  const activated = (entry: import('../settings-types').WorldBookEntry, text: string, recursivePass: boolean) => {
+    if (entry.disable) return false;
+    if (entry.tavernCharacterFilter?.length && characterName) {
+      const hit = entry.tavernCharacterFilter.some(x => x.toLocaleLowerCase() === characterName.toLocaleLowerCase());
+      if (entry.tavernCharacterFilterExclude ? hit : !hit) return false;
+    }
+    if (entry.tavernDelayUntilRecursion && !recursivePass) return false;
+    if (entry.tavernRecursionLevel != null && Number(entry.tavernRecursionLevel) > 0) {
+      const currentLevel = recursivePass ? 1 : 0;
+      if (currentLevel !== Number(entry.tavernRecursionLevel)) return false;
+    }
+    if (entry.tavernTriggers?.length) {
+      const triggerHit = entry.tavernTriggers.some(k => match(text, String(k), entry.use_regex, entry.tavernCaseSensitive === true, entry.tavernMatchWholeWords === true));
+      if (!triggerHit) return false;
+    }
+    if (entry.constant) return true;
+    const keys = entry.key.split(/\s*,\s*/).map(x => x.trim()).filter(Boolean);
+    if (!keys.length) return false;
+    const cs = entry.tavernCaseSensitive === true;
+    const whole = entry.tavernMatchWholeWords === true;
+    const primary = keys.some(k => match(text, k, entry.use_regex, cs, whole));
+    if (!primary) return false;
+    const secondary = entry.tavernSecondaryKeys || [];
+    if (!secondary.length) return true;
+    const hits = secondary.map(k => match(text, k, entry.use_regex, cs, whole));
+    switch (Number(entry.tavernSelectiveLogic ?? 0)) {
+      case 0: return hits.some(Boolean); // AND ANY
+      case 1: return !hits.every(Boolean); // NOT ALL
+      case 2: return !hits.some(Boolean); // NOT ANY
+      case 3: return hits.every(Boolean); // AND ALL
+      default: return hits.some(Boolean);
+    }
+  };
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const recursivePass = pass > 0;
+    const candidates = book.entries.filter(e => !active.has(e) && activated(e, working, recursivePass));
+    const eligible = candidates.filter(e => {
+      if (e.tavernExcludeRecursion && recursivePass) return false;
+      const p = e.useProbability ? Number(e.probability ?? 100) : 100;
+      return p >= 100 || (p > 0 && Math.random() * 100 < p);
+    });
+    const grouped = new Map<string, typeof eligible>();
+    const picked: typeof eligible = [];
+    for (const e of eligible) {
+      const g = e.tavernGroup?.trim();
+      if (!g) picked.push(e); else grouped.set(g, [...(grouped.get(g) || []), e]);
+    }
+    for (const entries of grouped.values()) {
+      const total = entries.reduce((n, e) => n + Math.max(1, Number(e.tavernGroupWeight ?? 100)), 0);
+      let cursor = Math.random() * total;
+      let selected = entries[entries.length - 1];
+      for (const e of entries) { cursor -= Math.max(1, Number(e.tavernGroupWeight ?? 100)); if (cursor <= 0) { selected = e; break; } }
+      picked.push(selected);
+    }
+    if (!picked.length) break;
+    for (const e of picked) active.set(e, true);
+    if (!(book.tavernRecursiveScanning || options.recursive)) break;
+    if (picked.some(e => e.tavernPreventRecursion || e.tavernPreventFurtherRecursion)) break;
+    const added = picked.map(e => e.content).filter(Boolean).join('\n');
+    if (!added.trim()) break;
+    working += `\n${added}`;
+  }
+  return [...active.keys()].sort((a, b) => Number(a.insertion_order ?? 0) - Number(b.insertion_order ?? 0));
 }
