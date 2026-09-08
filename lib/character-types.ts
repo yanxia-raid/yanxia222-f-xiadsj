@@ -22,7 +22,7 @@ export type Character = {
   /** 原始 SillyTavern Character Card；导入后以卡片自身字段为权威，不压平/丢弃未知 extensions。 */
   tavernCard?: TavernCharacterCard;
   /** Resource-library IDs materialized from this card so they can be rebound to other characters. */
-  tavernResources?: { worldBookId?: string; regexId?: string; presetId?: string };
+  tavernResources?: { worldBookId?: string; regexId?: string; presetId?: string; statusBarId?: string };
 };
 
 export type CanvasBgItem = {

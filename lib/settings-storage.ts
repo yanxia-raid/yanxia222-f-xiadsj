@@ -14,6 +14,7 @@ import type {
     CharacterBinding,
     Prompt,
     PromptOrderEntry,
+    TavernStatusBarConfig,
 } from "./settings-types";
 import type { UserIdentity } from "@/components/settings/user-identity";
 import { createBuiltinPreset, BUILTIN_PRESET_VERSION } from "./builtin-preset";
@@ -71,6 +72,7 @@ const BINDINGS_KEY = "ai_phone_bindings_v1";
 const FOLLOW_UP_CONFIG_KEY = "ai_phone_follow_up_config_v1";
 const CHAT_SEND_CONFIG_KEY = "ai_phone_chat_send_config_v1";
 const USER_IDENTITIES_KEY = "ai_phone_user_identities_v1";
+const TAVERN_STATUSBARS_KEY = "ai_phone_tavern_statusbars_v1";
 
 // Legacy key for migration
 const LEGACY_OVERRIDES_KEY = "ai_phone_char_settings_v1";
@@ -81,6 +83,7 @@ registerKvMigration(BINDINGS_KEY);
 registerKvMigration(FOLLOW_UP_CONFIG_KEY);
 registerKvMigration(CHAT_SEND_CONFIG_KEY);
 registerKvMigration(USER_IDENTITIES_KEY);
+registerKvMigration(TAVERN_STATUSBARS_KEY);
 registerKvMigration(LEGACY_OVERRIDES_KEY);
 
 // --- Helpers ---
@@ -261,6 +264,38 @@ export function savePresets(presets: PresetConfig[]): void {
 export async function savePresetsAsync(presets: PresetConfig[]): Promise<void> {
     if (typeof window === "undefined") return;
     await writePresetsCacheAsync(presets.map(stripDeprecatedPresetFields));
+}
+
+// --- Tavern Status Bars ----------------------------------------------------
+// Kept in a dedicated localStorage bucket so status-bar resources remain
+// independent from the app's legacy fixed-template settings.
+export function loadTavernStatusBars(): TavernStatusBarConfig[] {
+    if (typeof window === "undefined") return [];
+    try {
+        const raw = window.localStorage.getItem(TAVERN_STATUSBARS_KEY);
+        const value = raw ? JSON.parse(raw) : [];
+        return Array.isArray(value) ? value : [];
+    } catch {
+        return [];
+    }
+}
+
+export function saveTavernStatusBars(statusBars: TavernStatusBarConfig[]): void {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(TAVERN_STATUSBARS_KEY, JSON.stringify(statusBars));
+    window.dispatchEvent(new CustomEvent("settings-tavern-statusbars-updated"));
+}
+
+export function upsertTavernStatusBar(statusBar: TavernStatusBarConfig): void {
+    const all = loadTavernStatusBars();
+    const index = all.findIndex(x => x.id === statusBar.id);
+    if (index >= 0) all[index] = statusBar;
+    else all.push(statusBar);
+    saveTavernStatusBars(all);
+}
+
+export function deleteTavernStatusBar(id: string): void {
+    saveTavernStatusBars(loadTavernStatusBars().filter(x => x.id !== id));
 }
 
 export async function ensureSettingsStorageHydrated(): Promise<void> {

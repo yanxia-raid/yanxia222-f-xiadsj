@@ -142,6 +142,24 @@ export type RegexConfig = SettingItemMeta & {
     tavernNative?: { kind: "regex"; raw: unknown; payloadPath: "root" | "data" | "preset"; ruleShape?: "array" | "object"; ruleKeys?: Record<string, string>; baseline?: unknown };
 };
 
+// --- Tavern Status Bar ---
+/**
+ * A SillyTavern status-bar resource. The native payload is deliberately kept
+ * opaque so importing/exporting never forces it through the app's old template.
+ */
+export type TavernStatusBarConfig = SettingItemMeta & {
+    enabled: boolean;
+    sourceFormat?: string;
+    raw: unknown;
+    regexScripts?: Array<Record<string, unknown>>;
+    tavernNative?: {
+        kind: "statusbar";
+        raw: unknown;
+        payloadPath: "root" | "data" | "extensions";
+        baseline?: unknown;
+    };
+};
+
 // --- ApiConfig (migrated from api-settings.tsx) ---
 export type ApiConfig = {
     id: string;
