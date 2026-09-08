@@ -21,10 +21,31 @@ export type WorldBookEntry = {
     useProbability?: boolean;
     role?: number;
     insertion_order: number;
+    /** Native SillyTavern World Info semantics preserved for runtime. */
+    tavernSecondaryKeys?: string[];
+    tavernSelectiveLogic?: number;
+    tavernCaseSensitive?: boolean;
+    tavernMatchWholeWords?: boolean;
+    tavernGroup?: string;
+    tavernGroupWeight?: number;
+    tavernOutlet?: string;
+    tavernCharacterFilter?: string[];
+    tavernCharacterFilterExclude?: boolean;
+    tavernTriggers?: string[];
+    tavernExcludeRecursion?: boolean;
+    tavernPreventRecursion?: boolean;
+    tavernDelayUntilRecursion?: boolean;
+    tavernRecursionLevel?: number;
+    tavernPreventFurtherRecursion?: boolean;
 };
 
 export type WorldBookConfig = SettingItemMeta & {
     entries: WorldBookEntry[];
+    tavernScanDepth?: number;
+    tavernRecursiveScanning?: boolean;
+    tavernMaxRecursionSteps?: number;
+    /** Original Tavern/SillyTavern payload retained for loss-minimizing round-trip export. */
+    tavernNative?: { kind: "worldbook"; raw: unknown; payloadPath: "root" | "data" | "preset"; entryShape?: "array" | "object"; entryKeys?: Record<string, string>; baseline?: unknown };
 };
 
 // --- Preset ---
@@ -52,6 +73,8 @@ export type Prompt = {
     followUpOnly?: boolean;
     /** Multi-tag filtering. Entry is included only when ALL its tags are present in the active appTags. Empty/undefined = universal. */
     tags?: string[];
+    /** Native ST prompt injection trigger list, preserved and used when present. */
+    injection_trigger?: unknown[];
 };
 
 export type PresetConfig = SettingItemMeta & {
@@ -84,6 +107,12 @@ export type PresetConfig = SettingItemMeta & {
     story_summary_tag?: string;
     prompt_order?: PromptOrderEntry[];
     prompts: Prompt[];
+    /** Original Tavern/SillyTavern payload retained for loss-minimizing round-trip export. */
+    tavernNative?: {
+        kind: "preset"; raw: unknown; payloadPath: "root" | "data" | "preset"; baseline?: unknown;
+        promptOrderShape?: "flat" | "profiles";
+        promptOrderCharacterId?: number | string;
+    };
 };
 
 // --- Regex ---
@@ -109,6 +138,8 @@ export type RegexRule = {
 export type RegexConfig = SettingItemMeta & {
     builtIn?: boolean;
     rules: RegexRule[];
+    /** Original Tavern/SillyTavern payload retained for loss-minimizing round-trip export. */
+    tavernNative?: { kind: "regex"; raw: unknown; payloadPath: "root" | "data" | "preset"; ruleShape?: "array" | "object"; ruleKeys?: Record<string, string>; baseline?: unknown };
 };
 
 // --- ApiConfig (migrated from api-settings.tsx) ---

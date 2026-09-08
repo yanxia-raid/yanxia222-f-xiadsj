@@ -18,7 +18,7 @@ import { buildCharacterTimeContext, buildGroupTimeContext, type CharacterTimeCon
 import { formatShoppingPaymentRequestHistory } from "./shopping-payment-request";
 import { buildGroupAdminBracketText } from "./group-admin";
 import { mergeTavernRuntimeConfig, buildCharacterOwnedTavernSystem, buildCharacterOwnedTavernPostHistory, getTavernGreeting, getTavernDepthPrompt, getTavernExampleDialogue } from "./tavern/runtime";
-import { activateCharacterBookDetailed, getTavernLorePosition, getTavernLoreDepth } from "./tavern/lorebook";
+import { activateCharacterBookDetailed, activateBoundWorldBook, getTavernLorePosition, getTavernLoreDepth, getTavernLoreOutlet } from "./tavern/lorebook";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
 export type LLMToolCallPayload = { id: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
@@ -642,11 +642,21 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
         ?? history.slice(-10).map(m => m.content).join("\n");
     const activatedWBEntries: WorldBookEntry[] = [];
     activeWorldBooks.forEach(wb => {
+        if (input.activateAllWorldBooks) {
+            (wb.entries || []).forEach(entry => { if (!entry.disable) activatedWBEntries.push(entry); });
+            return;
+        }
+        const nativeActivated = activateBoundWorldBook(wb, recentHistoryStr, {
+            characterName: character.name,
+            recursive: wb.tavernRecursiveScanning === true,
+        });
+        if (wb.tavernNative || nativeActivated.length) {
+            activatedWBEntries.push(...nativeActivated);
+            return;
+        }
+        // Legacy phone-authored books keep their historical activation semantics.
         (wb.entries || []).forEach(entry => {
-            if (entry.disable) return;
-            if (input.activateAllWorldBooks || isWorldBookEntryActivated(entry, recentHistoryStr)) {
-                activatedWBEntries.push(entry);
-            }
+            if (!entry.disable && isWorldBookEntryActivated(entry, recentHistoryStr)) activatedWBEntries.push(entry);
         });
     });
 
@@ -742,6 +752,21 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
         const userPersonaText = buildUserPersonaText(userIdentity, resolvedUserName);
         const processingOrder = buildProcessingOrder(preset!);
 
+        // Native Tavern outlets: preserve the named outlet mechanism instead of
+        // silently flattening outlet entries into the generic lore section.
+        const tavernOutlets = new Map<string, string[]>();
+        for (const entry of activatedWBEntries) {
+            const position = getTavernLorePosition(entry as any);
+            if (position !== 'outlet') continue;
+            const outlet = getTavernLoreOutlet(entry as any);
+            if (!outlet) continue;
+            const text = String(entry.content || '').trim();
+            if (text) tavernOutlets.set(outlet, [...(tavernOutlets.get(outlet) || []), text]);
+        }
+        const expandNativeOutlets = (text: string) => text.replace(/\{\{\s*outlet::([^}]+?)\s*\}\}/gi, (_m, name: string) =>
+            (tavernOutlets.get(String(name).trim()) || []).join("\n")
+        );
+
         // Classify WB entries for marker placement
         const wbBeforeEntries = activatedWBEntries.filter(e => isWBBeforePosition(e));
         const wbAfterEntries = activatedWBEntries.filter(e => !isWBBeforePosition(e) && !isWBAtDepthPosition(e));
@@ -770,29 +795,40 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
                 }
             }
 
-            // Character-book activation follows the card's own ST/V3 rules: scan depth,
-            // primary + secondary keys, probability, groups and recursive scanning.
-            const activation = activateCharacterBookDetailed(tavernCard.data.character_book, recentHistoryStr);
-            const loreEngine = new MacroEngine(character.name, resolvedUserName);
-            applyTimeContextToMacroEngine(loreEngine, promptTimeContext);
-            let loreOrder = -50;
-            for (const entry of activation.entries) {
-                const rawContent = String(entry.content || '').trim();
-                if (!rawContent) continue;
-                const expandedLore = postProcessTrim(loreEngine.expand(rawContent)).trim();
-                if (!expandedLore) continue;
-                const position = getTavernLorePosition(entry);
-                const depth = position === 'at_depth' ? getTavernLoreDepth(entry) : beforeHistoryDepth;
-                // Outlet entries are preserved but only injected when the matching outlet macro
-                // is explicitly present in a preset. Otherwise they remain card data, as in ST.
-                if (position === 'outlet') continue;
-                blocks.push({
-                    text: expandedLore,
-                    role: typeof entry.role === 'number' ? (entry.role === 1 ? 'user' : entry.role === 2 ? 'assistant' : 'system') : 'system',
-                    depth,
-                    order: Number(entry.insertion_order ?? entry.order ?? loreOrder++),
-                    marker: `tavern:character_book:${String(entry.uid ?? loreOrder)}`,
-                });
+            // If the card's character_book has been materialized into the reusable
+            // World Book library and that library item is currently bound, let the
+            // normal binding/runtime path inject it. This prevents the same entries
+            // from being injected twice. If the user unbinds it later, the card-owned
+            // book automatically falls back to direct card runtime behavior.
+            const boundCardBook = Boolean(
+                character.tavernResources?.worldBookId
+                && activeWorldBooks.some(book => book.id === character.tavernResources?.worldBookId)
+            );
+            if (!boundCardBook) {
+                // Character-book activation follows the card's own ST/V3 rules: scan depth,
+                // primary + secondary keys, probability, groups and recursive scanning.
+                const activation = activateCharacterBookDetailed(tavernCard.data.character_book, recentHistoryStr);
+                const loreEngine = new MacroEngine(character.name, resolvedUserName);
+                applyTimeContextToMacroEngine(loreEngine, promptTimeContext);
+                let loreOrder = -50;
+                for (const entry of activation.entries) {
+                    const rawContent = String(entry.content || '').trim();
+                    if (!rawContent) continue;
+                    const expandedLore = postProcessTrim(loreEngine.expand(rawContent)).trim();
+                    if (!expandedLore) continue;
+                    const position = getTavernLorePosition(entry);
+                    const depth = position === 'at_depth' ? getTavernLoreDepth(entry) : beforeHistoryDepth;
+                    // Outlet entries are preserved but only injected when the matching outlet macro
+                    // is explicitly present in a preset. Otherwise they remain card data, as in ST.
+                    if (position === 'outlet') continue;
+                    blocks.push({
+                        text: expandedLore,
+                        role: typeof entry.role === 'number' ? (entry.role === 1 ? 'user' : entry.role === 2 ? 'assistant' : 'system') : 'system',
+                        depth,
+                        order: Number(entry.insertion_order ?? entry.order ?? loreOrder++),
+                        marker: `tavern:character_book:${String(entry.uid ?? loreOrder)}`,
+                    });
+                }
             }
 
             // V3 depth_prompt is an explicit card-owned insertion, not a generic status block.
@@ -902,7 +938,7 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
             }
 
             // Expand macros in prompt content
-            let content = engine.expand(p.content);
+            let content = expandNativeOutlets(engine.expand(p.content));
             content = postProcessTrim(content).trim();
             if (!content) continue;
 
@@ -941,6 +977,9 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
             const da = a.prompt.injection_depth ?? 0;
             const db = b.prompt.injection_depth ?? 0;
             if (da !== db) return da - db;
+            const ao = Number.isFinite(a.prompt.injection_order as number) ? (a.prompt.injection_order as number) : 0;
+            const bo = Number.isFinite(b.prompt.injection_order as number) ? (b.prompt.injection_order as number) : 0;
+            if (ao !== bo) return ao - bo;
             if (a.promptIndex !== b.promptIndex) return a.promptIndex - b.promptIndex;
             return (rolePriority[normalizeRole(a.prompt.role)] ?? 9) - (rolePriority[normalizeRole(b.prompt.role)] ?? 9);
         });

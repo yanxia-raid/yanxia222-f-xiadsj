@@ -21,6 +21,8 @@ export type Character = {
   polaroidStyle?: number; // 用户选择的拍立得样式索引
   /** 原始 SillyTavern Character Card；导入后以卡片自身字段为权威，不压平/丢弃未知 extensions。 */
   tavernCard?: TavernCharacterCard;
+  /** Resource-library IDs materialized from this card so they can be rebound to other characters. */
+  tavernResources?: { worldBookId?: string; regexId?: string; presetId?: string };
 };
 
 export type CanvasBgItem = {
