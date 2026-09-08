@@ -10,6 +10,7 @@ import {
     UNSUPPORTED_IMPORT_FORMAT,
 } from "@/lib/settings-storage";
 import type { RegexConfig, RegexRule } from "@/lib/settings-types";
+import { exportTavernRegex } from "@/lib/tavern-native-adapter";
 import { testRegexRule } from "@/lib/llm-prompt-assembler";
 import { MacroEngine } from "@/lib/macro-engine";
 import { areTagsEqual, getTagProfileId, getTagsLabel, type TagProfile } from "@/lib/content-tag-utils";
@@ -252,7 +253,7 @@ export function RegexManager({ isActive = true }: { isActive?: boolean } = {}) {
 
     const handleExport = async (group: RegexConfig) => {
         const { downloadFile } = await import("@/lib/download-utils");
-        const exportData = { name: group.name, description: group.description, rules: group.rules };
+        const exportData = exportTavernRegex(group);
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
         await downloadFile(blob, `${group.name || "regex_group"}.json`);
     };

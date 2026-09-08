@@ -12,6 +12,7 @@ import {
 } from "@/lib/settings-storage";
 import { loadCharacters } from "@/lib/character-storage";
 import type { WorldBookConfig, WorldBookEntry } from "@/lib/settings-types";
+import { exportTavernWorldBook } from "@/lib/tavern-native-adapter";
 import { SettingsContext } from "../phone-settings-app";
 import { BottomSheet, ConfirmDialog, TextExpandModal } from "@/components/ui/modal";
 import { SwipeActionRow, useSwipeActions } from "@/components/ui/swipe-actions";
@@ -315,7 +316,7 @@ export function WorldBookManager({ isActive = true }: { isActive?: boolean } = {
 
     const handleExport = async (book: WorldBookConfig) => {
         const { downloadFile } = await import("@/lib/download-utils");
-        const blob = new Blob([JSON.stringify(book, null, 2)], { type: "application/json" });
+        const blob = new Blob([JSON.stringify(exportTavernWorldBook(book), null, 2)], { type: "application/json" });
         await downloadFile(blob, `${book.name || "worldbook"}.json`);
     };
 

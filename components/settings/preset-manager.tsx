@@ -11,6 +11,7 @@ import {
     UNSUPPORTED_IMPORT_FORMAT,
 } from "@/lib/settings-storage";
 import type { PresetConfig, Prompt, PromptOrderEntry } from "@/lib/settings-types";
+import { exportTavernPreset } from "@/lib/tavern-native-adapter";
 import {
     areTagsEqual,
     CONTENT_SCOPE_TAG_GROUPS,
@@ -679,7 +680,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
     };
 
     const handleExport = async (preset: PresetConfig) => {
-        const exportData = { ...preset };
+        const exportData = exportTavernPreset(preset);
         const { downloadFile } = await import("@/lib/download-utils");
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
         await downloadFile(blob, `${preset.name || "preset"}.json`);
