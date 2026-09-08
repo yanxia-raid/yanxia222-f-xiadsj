@@ -55,6 +55,7 @@ import { kvGet, kvSet } from "@/lib/kv-db";
 import { normalizeTimeZone } from "@/lib/character-time";
 import { parseTavernFile, tavernCardToCharacterData } from "@/lib/tavern/parser";
 import { TavernControlPanel } from "@/components/character/tavern-control-panel";
+import { syncTavernCardResources } from "@/lib/tavern/resource-sync";
 
 type ViewType = "list" | "detail";
 
@@ -152,6 +153,28 @@ function getCharacterTimeZoneOptions(currentTimeZone = ""): string[] {
 export function PhoneCharacterApp({ onClose, onNotice }: PhoneCharacterAppProps) {
   const [view, setView] = useState<{ type: ViewType; id: string | null; isEditing?: boolean }>({ type: "list", id: null, isEditing: false });
   const [characters, setCharacters] = useState<Character[]>(() => loadCharacters());
+
+  // One-time migration: cards imported by older versions may already contain
+  // native World Book / Regex data but have no reusable library references yet.
+  // Materialize those resources now so they appear in the normal settings
+  // categories and can be rebound to other characters.
+  const tavernResourceMigrationDone = useRef(false);
+  useEffect(() => {
+    if (tavernResourceMigrationDone.current) return;
+    tavernResourceMigrationDone.current = true;
+    const current = loadCharacters();
+    let changed = false;
+    const next = current.map(character => {
+      if (!character.tavernCard || character.tavernResources) return character;
+      const synced = syncTavernCardResources(character);
+      if (JSON.stringify(synced.tavernResources || {}) !== JSON.stringify(character.tavernResources || {})) changed = true;
+      return synced;
+    });
+    if (changed) {
+      saveCharacters(next);
+      setCharacters(next);
+    }
+  }, []);
   const [bgItems, setBgItems] = useState<CanvasBgItem[]>(() => loadBackgroundItems());
   const [transition, setTransition] = useState<TransitionState | null>(null);
   const [pendingPlacementChar, setPendingPlacementChar] = useState<Character | null>(null);
@@ -891,10 +914,13 @@ function CharListView({
         try {
           const result = await parseTavernFile(file);
           const data = tavernCardToCharacterData(result.card);
-          const c = createCharacter({
+          let c = createCharacter({
             ...data,
             avatar: data.avatar || null,
           });
+          // Materialize card-owned resources into the reusable library and bind
+          // them to this character. The card itself remains the source of truth.
+          c = syncTavernCardResources(c);
           c.polaroidStyle = styleIdx;
           onStartCharPlacement(c);
           const warningText = result.warnings.length ? `；${result.warnings.join("；")}` : "";
