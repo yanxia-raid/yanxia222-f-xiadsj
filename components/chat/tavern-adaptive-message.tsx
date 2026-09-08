@@ -4,7 +4,7 @@ import { loadCharacters } from "@/lib/character-storage";
 import { applyTavernResponseFormat, detectTavernFormatProfile, extractTavernStatus, type TavernCharacterCard } from "@/lib/tavern";
 import type { ReactNode } from "react";
 import { TavernStatusBar } from "@/components/chat/tavern-status-bar";
-import { loadTavernStatusBars } from "@/lib/settings-storage";
+import { loadBindingConfig, loadTavernStatusBars, resolveBinding } from "@/lib/settings-storage";
 import { applyTavernStatusBars } from "@/lib/tavern/status-resource";
 
 type Props = {
@@ -281,14 +281,22 @@ export function TavernAdaptiveMessage({ characterId, content, render, onActionSe
   useEffect(() => {
     const onStatusBars = () => setStatusBarRevision(v => v + 1);
     window.addEventListener("settings-tavern-statusbars-updated", onStatusBars);
-    return () => window.removeEventListener("settings-tavern-statusbars-updated", onStatusBars);
+    window.addEventListener("settings-bindings-updated", onStatusBars);
+    return () => {
+      window.removeEventListener("settings-tavern-statusbars-updated", onStatusBars);
+      window.removeEventListener("settings-bindings-updated", onStatusBars);
+    };
   }, []);
 
   const adapted = useMemo(() => {
     const cardOutput = card
       ? applyTavernResponseFormat(card, content, { preserveInteractiveHtml: true })
       : content;
-    return applyTavernStatusBars(cardOutput, loadTavernStatusBars());
+    const slot = characterId ? resolveBinding(loadBindingConfig(), characterId, "chat") : {};
+    const boundStatusBar = slot.statusBarId
+      ? loadTavernStatusBars().filter(item => item.id === slot.statusBarId && item.enabled)
+      : [];
+    return applyTavernStatusBars(cardOutput, boundStatusBar);
   }, [card, content, statusBarRevision]);
 
   const parsed = useMemo(() => extractTavernStatus(adapted), [adapted]);
