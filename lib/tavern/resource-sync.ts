@@ -1,5 +1,5 @@
 import type { Character } from '@/lib/character-types';
-import type { BindingConfig, PresetConfig, RegexConfig, WorldBookConfig } from '@/lib/settings-types';
+import type { BindingConfig, PresetConfig, RegexConfig, WorldBookConfig, TavernStatusBarConfig } from '@/lib/settings-types';
 import {
   loadBindingConfig,
   saveBindingConfig,
@@ -9,9 +9,12 @@ import {
   saveWorldBooks,
   loadRegexes,
   saveRegexes,
+  loadTavernStatusBars,
+  saveTavernStatusBars,
 } from '@/lib/settings-storage';
 import { parseTavernPreset, parseTavernRegex, parseTavernWorldBook } from '@/lib/tavern-native-adapter';
 import { getRegexScripts } from './parser';
+import { parseTavernStatusBar } from './status-resource';
 import type { TavernCharacterCard } from './types';
 
 function stableId(prefix: string, characterId: string): string {
@@ -86,6 +89,7 @@ export function syncTavernCardResources(character: Character): Character {
   let worldBookId = character.tavernResources?.worldBookId;
   let regexId = character.tavernResources?.regexId;
   let presetId = character.tavernResources?.presetId;
+  let statusBarId = character.tavernResources?.statusBarId;
   const now = Date.now();
 
   // 1) Character Book -> reusable World Book library item.
@@ -122,11 +126,31 @@ export function syncTavernCardResources(character: Character): Character {
     }
   }
 
-  const refs = { worldBookId, regexId, presetId };
+  // 4) A card may carry a status-bar template alongside its normal resources.
+  // Only materialize an actual status-bar-looking extension; ordinary regex scripts
+  // remain in the Regex library and are not duplicated.
+  const ext = card.data.extensions && typeof card.data.extensions === "object"
+    ? card.data.extensions as Record<string, unknown> : {};
+  const statusKeys = ["status_template", "statusTemplate", "status_format", "statusFormat", "statusBarTemplate", "state_template", "stateTemplate"];
+  const hasStatusTemplate = statusKeys.some(k => typeof ext[k] === "string" && String(ext[k]).trim());
+  if (hasStatusTemplate) {
+    const parsed = parseTavernStatusBar(JSON.stringify(card.raw), `${card.data.name} · 状态栏`);
+    if (parsed) {
+      statusBarId = stableId('statusbar', character.id);
+      const item: TavernStatusBarConfig = { ...parsed, id: statusBarId, name: parsed.name || `${card.data.name} · 状态栏`, createdAt: parsed.createdAt || now, updatedAt: now };
+      const bars = loadTavernStatusBars();
+      const index = bars.findIndex(x => x.id === statusBarId);
+      if (index >= 0) bars[index] = item; else bars.push(item);
+      saveTavernStatusBars(bars);
+    }
+  }
+
+  const refs = { worldBookId, regexId, presetId, statusBarId };
   if (typeof window !== 'undefined') {
     if (worldBookId) window.dispatchEvent(new CustomEvent('settings-worldbooks-updated'));
     if (regexId) window.dispatchEvent(new CustomEvent('settings-regexes-updated'));
     if (presetId) window.dispatchEvent(new CustomEvent('settings-presets-updated'));
+    if (statusBarId) window.dispatchEvent(new CustomEvent('settings-tavern-statusbars-updated'));
   }
   const binding = loadBindingConfig();
   saveBindingConfig(mergeBinding(binding, character.id, refs));
