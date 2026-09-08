@@ -26,6 +26,29 @@ function sourceFormat(raw: Record<string, unknown>) {
   return spec || (isRecord(raw.data) ? 'tavern-card' : 'tavern-native');
 }
 
+function findTemplate(payload: Record<string, unknown>, raw: Record<string, unknown>): { value: string; key: string } {
+  const keys = ['status_template', 'statusTemplate', 'status_format', 'statusFormat', 'statusBarTemplate', 'state_template', 'stateTemplate'];
+  const sources: Array<Record<string, unknown>> = [];
+  if (isRecord(payload.extensions)) sources.push(payload.extensions);
+  sources.push(payload, raw);
+  for (const source of sources) {
+    for (const key of keys) {
+      if (typeof source[key] === 'string') return { value: String(source[key]), key };
+    }
+  }
+  return { value: '', key: keys[0] };
+}
+
+function findRegexKey(payload: Record<string, unknown>, raw: Record<string, unknown>): { value: Array<Record<string, unknown>>; key: string; target: Record<string, unknown> } {
+  const candidates: Array<[Record<string, unknown>, string]> = [];
+  if (isRecord(payload.extensions)) { candidates.push([payload.extensions, 'regex_scripts'], [payload.extensions, 'regexScripts']); }
+  candidates.push([payload, 'regex_scripts'], [payload, 'regexScripts'], [raw, 'regex_scripts'], [raw, 'regexScripts']);
+  const found = candidates.find(([obj, key]) => Array.isArray(obj[key]));
+  if (found) return { value: clone(found[0][found[1]] as Array<Record<string, unknown>>), key: found[1], target: found[0] };
+  const target = isRecord(payload.extensions) ? payload.extensions : payload;
+  return { value: [], key: 'regex_scripts', target };
+}
+
 function collectRegex(payload: Record<string, unknown>, raw: Record<string, unknown>): Array<Record<string, unknown>> {
   const candidates = [
     payload.regex_scripts,
@@ -63,6 +86,8 @@ export function parseTavernStatusBar(text: string, fallbackName = '导入的酒�
       sourceFormat: sourceFormat(raw),
       raw: clone(raw),
       regexScripts: collectRegex(located.payload, raw),
+      template: findTemplate(located.payload, raw).value,
+      templateKey: findTemplate(located.payload, raw).key,
       tavernNative: {
         kind: 'statusbar',
         raw: clone(raw),
@@ -73,6 +98,38 @@ export function parseTavernStatusBar(text: string, fallbackName = '导入的酒�
   } catch {
     return null;
   }
+}
+
+export function patchTavernStatusBar(statusBar: TavernStatusBarConfig, patch: Partial<TavernStatusBarConfig>): TavernStatusBarConfig {
+  const next = clone(statusBar);
+  if (typeof patch.name === 'string') next.name = patch.name;
+  if (typeof patch.description === 'string') next.description = patch.description;
+  if (typeof patch.enabled === 'boolean') next.enabled = patch.enabled;
+  if (typeof patch.template === 'string') next.template = patch.template;
+  if (Array.isArray(patch.regexScripts)) next.regexScripts = clone(patch.regexScripts);
+  let raw = clone((next.tavernNative?.raw ?? next.raw) as any);
+  if (!isRecord(raw)) raw = {};
+  const located = locatePayload(raw);
+  const payload = located.payload;
+  const data = isRecord(raw.data) ? raw.data : null;
+  const extensionTarget = isRecord(payload.extensions) ? payload.extensions : payload;
+  if (typeof patch.name === 'string') {
+    if (data && typeof data.name === 'string') data.name = patch.name;
+    else raw.name = patch.name;
+  }
+  if (typeof patch.description === 'string') {
+    if (data && typeof data.description === 'string') data.description = patch.description;
+    else raw.description = patch.description;
+  }
+  if (typeof patch.template === 'string') extensionTarget[next.templateKey || 'status_template'] = patch.template;
+  if (Array.isArray(patch.regexScripts)) {
+    const regexKey = findRegexKey(payload, raw).key;
+    extensionTarget[regexKey] = clone(patch.regexScripts);
+  }
+  next.raw = raw;
+  next.tavernNative = next.tavernNative ? { ...next.tavernNative, raw: clone(raw) } : undefined;
+  next.updatedAt = Date.now();
+  return next;
 }
 
 export function exportTavernStatusBar(statusBar: TavernStatusBarConfig): unknown {

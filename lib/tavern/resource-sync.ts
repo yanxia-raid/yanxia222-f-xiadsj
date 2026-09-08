@@ -62,7 +62,7 @@ function replaceOrAppend<T extends { id: string }>(items: T[], item: T): T[] {
   return next;
 }
 
-function mergeBinding(config: BindingConfig, characterId: string, refs: { worldBookId?: string; regexId?: string; presetId?: string }): BindingConfig {
+function mergeBinding(config: BindingConfig, characterId: string, refs: { worldBookId?: string; regexId?: string; presetId?: string; statusBarId?: string }): BindingConfig {
   const index = config.characterBindings.findIndex(b => b.characterId === characterId);
   const current = index >= 0 ? config.characterBindings[index] : { characterId, defaults: {}, appOverrides: {} };
   const defaults = { ...current.defaults };
@@ -70,6 +70,7 @@ function mergeBinding(config: BindingConfig, characterId: string, refs: { worldB
   if (refs.regexId) defaults.regexIds = Array.from(new Set([...(defaults.regexIds || []), refs.regexId]));
   // Do not overwrite a manually selected preset. A card preset becomes the character default only when none exists.
   if (refs.presetId && !defaults.presetId) defaults.presetId = refs.presetId;
+  if (refs.statusBarId && !defaults.statusBarId) defaults.statusBarId = refs.statusBarId;
   const nextBinding = { ...current, defaults };
   const next = { ...config, characterBindings: [...config.characterBindings] };
   if (index >= 0) next.characterBindings[index] = nextBinding;

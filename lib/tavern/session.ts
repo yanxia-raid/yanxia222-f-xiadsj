@@ -1,8 +1,11 @@
 import type { ChatMessage, ChatSession } from "@/lib/chat-storage";
 import { loadChatMessages, pushChatMessage, loadChatSessions, saveChatSessions } from "@/lib/chat-storage";
 import { loadCharacters } from "@/lib/character-storage";
-import { resolveUserIdentity } from "@/lib/settings-storage";
+import { resolveUserIdentity, loadBindingConfig, loadRegexes, resolveBinding, loadTavernStatusBars } from "@/lib/settings-storage";
 import { getTavernCard } from "./runtime";
+import { applyOutputRegex } from "@/lib/llm-prompt-assembler";
+import { applyTavernStatusBars } from "./status-resource";
+import { MacroEngine } from "@/lib/macro-engine";
 
 export function getTavernGreetings(characterId: string): string[] {
   const character = loadCharacters().find(c => c.id === characterId);
@@ -46,7 +49,25 @@ export function ensureTavernGreeting(session: ChatSession): ChatMessage | null {
   const index = Math.max(0, Math.min(greetings.length - 1, Math.floor(session.tavernGreetingIndex ?? 0)));
   const userIdentity = resolveUserIdentity(character.id, "chat");
   const userName = userIdentity?.name || resolveUserIdentity()?.name || "你";
-  const content = expandGreeting(greetings[index], character.name || card.data.name, userName);
+  let content = expandGreeting(greetings[index], character.name || card.data.name, userName);
+  // A character can borrow another character's Tavern Regex/Status Bar through bindings.
+  // Apply the bound runtime resources to the initial greeting too; otherwise bindings only
+  // affect later model turns and appear to be "bound but not running".
+  const slot = resolveBinding(loadBindingConfig(), character.id, "chat");
+  const allRegexes = loadRegexes();
+  const boundRegexes = (slot.regexIds || [])
+    .map(id => allRegexes.find(regex => regex.id === id))
+    .filter(Boolean) as import("@/lib/settings-types").RegexConfig[];
+  if (boundRegexes.length > 0) {
+    content = applyOutputRegex(content, boundRegexes, {
+      macroEngine: new MacroEngine(character.name || card.data.name, userName),
+      activeTags: ["chat"],
+    });
+  }
+  if (slot.statusBarId) {
+    const bars = loadTavernStatusBars().filter(item => item.id === slot.statusBarId && item.enabled);
+    content = applyTavernStatusBars(content, bars);
+  }
   if (!content.trim()) return null;
   return pushChatMessage({
     sessionId: session.id, role: "assistant", content, status: "sent", origin: "chat",
