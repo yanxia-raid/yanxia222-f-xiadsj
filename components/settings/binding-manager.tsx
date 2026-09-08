@@ -17,6 +17,7 @@ import {
     UserPlus,
     Wrench,
     X,
+    SlidersHorizontal,
     type LucideIcon,
 } from "lucide-react";
 import { SettingsContext } from "../phone-settings-app";
@@ -42,6 +43,7 @@ import type {
     PresetConfig,
     WorldBookConfig,
     RegexConfig,
+    TavernStatusBarConfig,
 } from "@/lib/settings-types";
 import { CONTENT_APP_IDS, CONTENT_APP_LABELS } from "@/lib/settings-types";
 import { BINDING_ACCENTS, CONTENT_APP_ACCENTS } from "@/lib/ui-accent-colors";
@@ -55,6 +57,7 @@ import {
     loadPresets,
     loadWorldBooks,
     loadRegexes,
+    loadTavernStatusBars,
     loadUserIdentities,
     ensureSettingsStorageHydrated,
 } from "@/lib/settings-storage";
@@ -64,7 +67,7 @@ import { loadCharacters } from "@/lib/character-storage";
 import type { Character } from "@/lib/character-types";
 
 type Level = "global" | "character" | "app";
-type SingleBindingField = "apiConfigId" | "voiceConfigId" | "presetId" | "userIdentityId";
+type SingleBindingField = "apiConfigId" | "voiceConfigId" | "presetId" | "userIdentityId" | "statusBarId";
 type MultiBindingField = "worldBookIds" | "regexIds";
 type BindingField = SingleBindingField | MultiBindingField;
 type AuxBindingField = "memorySummaryApiConfigId" | "embeddingApiConfigId" | "mascotApiConfigId" | "reasoningTranslateApiConfigId" | "qaApiConfigId";
@@ -75,6 +78,7 @@ const BINDING_FIELD_VISUALS: Record<BindingField, { icon: LucideIcon; color: str
     presetId: { icon: Layers, color: BINDING_ACCENTS.preset },
     worldBookIds: { icon: BookOpen, color: BINDING_ACCENTS.worldBook },
     regexIds: { icon: Asterisk, color: BINDING_ACCENTS.regex },
+    statusBarId: { icon: SlidersHorizontal, color: BINDING_ACCENTS.regex },
     userIdentityId: { icon: User, color: BINDING_ACCENTS.identity },
 };
 
@@ -113,6 +117,7 @@ export function BindingManager() {
     const [presets, setPresets] = useState<PresetConfig[]>([]);
     const [worldBooks, setWorldBooks] = useState<WorldBookConfig[]>([]);
     const [regexes, setRegexes] = useState<RegexConfig[]>([]);
+    const [statusBars, setStatusBars] = useState<TavernStatusBarConfig[]>([]);
     const [identities, setIdentities] = useState<UserIdentity[]>([]);
     const [customApps, setCustomApps] = useState<InstalledCustomApp[]>([]);
 
@@ -131,6 +136,7 @@ export function BindingManager() {
         setPresets(loadPresets());
         setWorldBooks(loadWorldBooks());
         setRegexes(loadRegexes());
+        setStatusBars(loadTavernStatusBars());
         setIdentities(loadUserIdentities());
     };
 
@@ -176,6 +182,7 @@ export function BindingManager() {
             identity: new Set(identities.map(i => i.id)),
             wb: new Set(worldBooks.map(w => w.id)),
             regex: new Set(regexes.map(r => r.id)),
+            statusBar: new Set(statusBars.map(r => r.id)),
         };
         const cleanSlot = (slot: BindingSlot): [BindingSlot, boolean] => {
             const s = { ...slot };
@@ -189,8 +196,8 @@ export function BindingManager() {
                 if (f.length !== s.worldBookIds.length) changed = true;
                 s.worldBookIds = f.length > 0 ? f : undefined;
             }
-            if (s.regexIds) {
-                const f = s.regexIds.filter(id => validSets.regex.has(id));
+            if (s.statusBarId && !validSets.statusBar.has(s.statusBarId)) { s.statusBarId = undefined; changed = true; }
+            if (s.regexIds) {                const f = s.regexIds.filter(id => validSets.regex.has(id));
                 if (f.length !== s.regexIds.length) changed = true;
                 s.regexIds = f.length > 0 ? f : undefined;
             }
@@ -242,7 +249,7 @@ export function BindingManager() {
             }
             return prev;
         });
-    }, [isLoaded, apiConfigs, voiceConfigs, presets, worldBooks, regexes, identities]);
+    }, [isLoaded, apiConfigs, voiceConfigs, presets, worldBooks, regexes, statusBars, identities]);
 
     // Navigation management
     useEffect(() => {
@@ -319,6 +326,7 @@ export function BindingManager() {
         if (slot.userIdentityId) target.userIdentityId = slot.userIdentityId;
         if (slot.worldBookIds && slot.worldBookIds.length > 0) target.worldBookIds = [...slot.worldBookIds];
         if (slot.regexIds && slot.regexIds.length > 0) target.regexIds = [...slot.regexIds];
+        if (slot.statusBarId) target.statusBarId = slot.statusBarId;
         return target;
     };
 
@@ -375,6 +383,7 @@ export function BindingManager() {
             binding.defaults.userIdentityId ||
             (binding.defaults.worldBookIds && binding.defaults.worldBookIds.length > 0) ||
             (binding.defaults.regexIds && binding.defaults.regexIds.length > 0) ||
+            binding.defaults.statusBarId ||
             Object.keys(binding.appOverrides).length > 0
         );
     };
@@ -423,6 +432,7 @@ export function BindingManager() {
             case "userIdentityId": return "用户身份";
             case "worldBookIds": return "世界书";
             case "regexIds": return "正则规则";
+            case "statusBarId": return "酒馆状态栏";
         }
     };
 
@@ -434,6 +444,7 @@ export function BindingManager() {
             case "userIdentityId": return "全局用户身份";
             case "worldBookIds": return "全局启用的世界书";
             case "regexIds": return "全局启用的正则规则";
+            case "statusBarId": return "酒馆兼容状态栏，按角色/应用绑定运行";
         }
     };
 
@@ -471,6 +482,8 @@ export function BindingManager() {
                 return worldBooks.map(w => ({ id: w.id, name: w.name }));
             case "regexIds":
                 return regexes.map(r => ({ id: r.id, name: r.name }));
+            case "statusBarId":
+                return statusBars.map(r => ({ id: r.id, name: r.name }));
         }
     };
 
@@ -573,7 +586,7 @@ export function BindingManager() {
         const primaryFields: BindingField[] = ["apiConfigId", "voiceConfigId"];
         const compactFields: BindingField[] = options?.includeRegex === false
             ? ["presetId", "worldBookIds"]
-            : ["presetId", "worldBookIds", "regexIds"];
+            : ["presetId", "worldBookIds", "regexIds", "statusBarId"];
         const renderBindingCard = (field: BindingField, variant: "large" | "small" | "wide") => {
             const display = getSlotFieldDisplay(slot, field, emptyText);
             const valueClassName = [
