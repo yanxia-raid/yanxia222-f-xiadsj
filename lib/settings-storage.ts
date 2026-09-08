@@ -26,41 +26,13 @@ import {
     hydrateSettingsDb,
 } from "./settings-db";
 import { kvGet, kvSet, kvRemove, registerKvMigration } from "./kv-db";
+import { parseTavernPreset, parseTavernWorldBook, parseTavernRegex } from "./tavern-native-adapter";
 
 // --- Unsupported import format detection ---
 export const UNSUPPORTED_IMPORT_FORMAT = "UNSUPPORTED_IMPORT_FORMAT";
 
-/** Preset fingerprint fields never present in our exports. */
-const UNSUPPORTED_PRESET_FIELDS = [
-    // API/model provider fields
-    "chat_completion_source", "openai_model", "claude_model", "windowai_model",
-    "reverse_proxy", "proxy_password", "mancer_model", "togetherai_model",
-    "ollama_model", "preset_settings_type", "api_url_scale",
-    // External generation/feature fields
-    "assistant_prefill", "assistant_impersonation", "claude_use_sysprompt",
-    "use_makersuite_sysprompt", "squash_system_messages", "image_inlining",
-    "continue_prefill", "function_calling", "seed", "n",
-];
-
-function isUnsupportedPresetFormat(obj: Record<string, unknown>): boolean {
-    return UNSUPPORTED_PRESET_FIELDS.some(f => f in obj);
-}
-
-/** World book shapes with unsupported root/entry fields. */
-const UNSUPPORTED_WB_ROOT_FIELDS = ["recursiveScan", "caseSensitive", "originalData", "globalSelect"];
-const UNSUPPORTED_WB_ENTRY_FIELDS = ["selectiveLogic", "secondary_keys", "extensions", "characterFilter", "vectorized"];
-
-function isUnsupportedWorldBookFormat(obj: Record<string, unknown>): boolean {
-    // Root-level external fields
-    if (UNSUPPORTED_WB_ROOT_FIELDS.some(f => f in obj)) return true;
-    // Dictionary entries are treated as unsupported import format
-    if (obj.entries && typeof obj.entries === "object" && !Array.isArray(obj.entries)) return true;
-    // Check entry-level external fields
-    const entries = Array.isArray(obj.entries) ? obj.entries : (obj.entries && typeof obj.entries === "object" ? Object.values(obj.entries) : []);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (entries.length > 0 && entries.some((e: any) => e && UNSUPPORTED_WB_ENTRY_FIELDS.some(f => f in e))) return true;
-    return false;
-}
+// Tavern/SillyTavern imports are intentionally adaptive. Unknown fields are
+// preserved by the native adapter instead of being rejected as "unsupported".
 
 // --- Keys ---
 const API_CONFIGS_KEY = "ai_phone_api_configs_v1";
@@ -290,89 +262,8 @@ export function createPreset(name: string): PresetConfig {
 }
 
 export function parsePresetFromJson(text: string, fallbackName: string = "导入的预设"): PresetConfig | null {
-    try {
-        const obj = JSON.parse(text);
-        if (!obj || typeof obj !== "object") return null;
-
-        if (isUnsupportedPresetFormat(obj)) throw new Error(UNSUPPORTED_IMPORT_FORMAT);
-
-        const preset = createPreset(obj.name || fallbackName);
-
-        // Extract basic fields
-        if (typeof obj.temperature === "number") preset.temperature = obj.temperature;
-        if (typeof obj.top_p === "number") preset.top_p = obj.top_p;
-        if (typeof obj.top_k === "number") preset.top_k = obj.top_k;
-        if (typeof obj.frequency_penalty === "number") preset.frequency_penalty = obj.frequency_penalty;
-        if (typeof obj.presence_penalty === "number") preset.presence_penalty = obj.presence_penalty;
-        if (typeof obj.repetition_penalty === "number") preset.repetition_penalty = obj.repetition_penalty;
-        if (typeof obj.openai_max_tokens === "number") preset.openai_max_tokens = obj.openai_max_tokens;
-        if (typeof obj.openai_max_context === "number") preset.openai_max_context = obj.openai_max_context;
-        // New preset globals
-        if (typeof obj.top_a === "number") preset.top_a = obj.top_a;
-        if (typeof obj.min_p === "number") preset.min_p = obj.min_p;
-        if (typeof obj.wrap_in_quotes === "boolean") preset.wrap_in_quotes = obj.wrap_in_quotes;
-        if (typeof obj.names_behavior === "number") preset.names_behavior = obj.names_behavior;
-        if (typeof obj.send_if_empty === "string") preset.send_if_empty = obj.send_if_empty;
-        if (typeof obj.impersonation_prompt === "string") preset.impersonation_prompt = obj.impersonation_prompt;
-        if (typeof obj.new_chat_prompt === "string") preset.new_chat_prompt = obj.new_chat_prompt;
-        if (typeof obj.new_group_chat_prompt === "string") preset.new_group_chat_prompt = obj.new_group_chat_prompt;
-        if (typeof obj.new_example_chat_prompt === "string") preset.new_example_chat_prompt = obj.new_example_chat_prompt;
-        if (typeof obj.continue_nudge_prompt === "string") preset.continue_nudge_prompt = obj.continue_nudge_prompt;
-        if (typeof obj.group_nudge_prompt === "string") preset.group_nudge_prompt = obj.group_nudge_prompt;
-        if (typeof obj.bias_preset_selected === "string") preset.bias_preset_selected = obj.bias_preset_selected;
-        if (typeof obj.max_context_unlocked === "boolean") preset.max_context_unlocked = obj.max_context_unlocked;
-        if (typeof obj.wi_format === "string") preset.wi_format = obj.wi_format;
-        if (typeof obj.scenario_format === "string") preset.scenario_format = obj.scenario_format;
-        if (typeof obj.personality_format === "string") preset.personality_format = obj.personality_format;
-        if (typeof obj.story_summary_tag === "string") preset.story_summary_tag = obj.story_summary_tag;
-
-        // Parse prompts if array
-        if (Array.isArray(obj.prompts)) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            preset.prompts = obj.prompts.map((p: any) => normalizePresetPromptScope({
-                identifier: p.identifier || p.name || `prompt_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-                name: String(p.name || "未命名"),
-                role: String(p.role || "system"),
-                content: String(p.content || ""),
-                injection_depth: Number(p.injection_depth) || 0,
-                enabled: p.enabled !== false,
-                system_prompt: Boolean(p.system_prompt || false),
-                marker: Boolean(p.marker || false),
-                forbid_overrides: Boolean(p.forbid_overrides || false),
-                injection_position: Number(p.injection_position) || 0,
-                featureTag: p.featureTag || undefined,
-                followUpOnly: p.followUpOnly === true ? true : undefined,
-                tags: Array.isArray(p.tags) && p.tags.length > 0 ? p.tags.map(String) : undefined,
-            }));
-        }
-
-        // Parse prompt_order from the current flat export format.
-        if (Array.isArray(obj.prompt_order)) {
-            const rawOrder: Array<{ identifier: string; enabled?: unknown }> =
-                (obj.prompt_order as unknown[]).filter((entry: unknown): entry is { identifier: string; enabled?: unknown } =>
-                    !!entry && typeof entry === "object" && typeof (entry as { identifier?: unknown }).identifier === "string"
-                );
-            if (rawOrder.length > 0) {
-                preset.prompt_order = rawOrder.map((entry) => {
-                    return {
-                        identifier: String(entry.identifier),
-                        enabled: entry.enabled !== false,
-                    };
-                });
-            }
-        }
-
-        // 导入的 JSON 没带顺序表时，按 prompts 数组顺序补一份，
-        // 保证界面看到的顺序和组装时用的顺序永远是同一份。
-        if (!preset.prompt_order?.length && preset.prompts.length > 0) {
-            preset.prompt_order = preset.prompts.map(p => ({ identifier: p.identifier, enabled: p.enabled }));
-        }
-
-        return preset;
-    } catch (e) {
-        if (e instanceof Error && e.message === UNSUPPORTED_IMPORT_FORMAT) throw e;
-        return null;
-    }
+    try { return parseTavernPreset(text, fallbackName); }
+    catch (e) { if (e instanceof Error && e.message === UNSUPPORTED_IMPORT_FORMAT) throw e; return null; }
 }
 
 // --- WorldBooks ──────────────────────────────────────────
@@ -428,30 +319,8 @@ function parseWorldBookEntry(e: any): WorldBookEntry {
 }
 
 export function parseWorldBookFromJson(text: string): WorldBookConfig | null {
-    try {
-        const obj = JSON.parse(text);
-        if (!obj || typeof obj !== "object") return null;
-
-        if (isUnsupportedWorldBookFormat(obj)) throw new Error(UNSUPPORTED_IMPORT_FORMAT);
-
-        const wb = createWorldBook(obj.name || "导入的世界书");
-        if (Array.isArray(obj.entries)) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const parsedEntries = obj.entries.map((e: any) => parseWorldBookEntry(e));
-
-            // Note: some formats might use dictionary-shaped entries.
-            wb.entries = parsedEntries;
-        } else if (typeof obj.entries === "object" && obj.entries !== null) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const parsedEntries = Object.values(obj.entries).map((e: any) => parseWorldBookEntry(e));
-            wb.entries = parsedEntries;
-        }
-
-        return wb;
-    } catch (e) {
-        if (e instanceof Error && e.message === UNSUPPORTED_IMPORT_FORMAT) throw e;
-        return null;
-    }
+    try { return parseTavernWorldBook(text); }
+    catch (e) { if (e instanceof Error && e.message === UNSUPPORTED_IMPORT_FORMAT) throw e; return null; }
 }
 
 // --- Regexes ──────────────────────────────────────────
@@ -512,70 +381,8 @@ export function createRegexGroup(name: string): RegexConfig {
 }
 
 export function parseRegexFromJson(text: string, fallbackName: string = "导入的正则组"): RegexConfig | null {
-    try {
-        const obj = JSON.parse(text);
-        if (!obj) return null;
-
-        let rulesArray = [];
-        if (Array.isArray(obj)) {
-            // Raw array of rules is an unsupported import format.
-            throw new Error(UNSUPPORTED_IMPORT_FORMAT);
-        } else if (obj.rules && Array.isArray(obj.rules)) {
-            // Group format: { name, rules: [...] } — our format
-            rulesArray = obj.rules;
-        } else if (obj.findRegex || obj.scriptName) {
-            // Single regex script object without group wrapper is unsupported.
-            throw new Error(UNSUPPORTED_IMPORT_FORMAT);
-        } else {
-            return null; // Don't know how to parse
-        }
-
-        // Determine group name: JSON name > filename > first rule's scriptName > default
-        const groupName = obj.name || obj.scriptName || fallbackName
-            || (rulesArray[0]?.scriptName ? String(rulesArray[0].scriptName) : "导入的正则组");
-
-        const group = createRegexGroup(groupName);
-        if (obj.description) group.description = String(obj.description);
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        group.rules = rulesArray.map((r: any) => {
-            // --- placement mapping ---
-            // Some imports use promptOnly/markdownOnly flags alongside placement array.
-            // If only promptOnly is set and placement is missing, default to [1] (input).
-            let placement: number[] = Array.isArray(r.placement) ? r.placement.map(Number) : [1];
-            if (r.promptOnly && !r.markdownOnly && placement.length === 0) {
-                placement = [1];
-            }
-
-            // --- trimStrings ---
-            let trimStrings: string[] | undefined;
-            if (Array.isArray(r.trimStrings) && r.trimStrings.length > 0) {
-                trimStrings = r.trimStrings.map(String);
-            }
-
-            return {
-                id: r.id || generateId("regex-rule"),
-                scriptName: String(r.scriptName || r.name || "未命名规则"),
-                findRegex: String(r.findRegex || r.regex || ""),
-                replaceString: String(r.replaceString || r.replace || ""),
-                tags: normalizeRegexRuleTags(r.tags),
-                disabled: Boolean(r.disabled || false),
-                placement,
-                trimStrings,
-                markdownOnly: r.markdownOnly === true ? true : undefined,
-                promptOnly: r.promptOnly === true ? true : undefined,
-                runOnEdit: r.runOnEdit === true ? true : undefined,
-                substituteRegex: typeof r.substituteRegex === "number" ? r.substituteRegex : undefined,
-                minDepth: typeof r.minDepth === "number" && !isNaN(r.minDepth) ? r.minDepth : undefined,
-                maxDepth: typeof r.maxDepth === "number" && !isNaN(r.maxDepth) ? r.maxDepth : undefined,
-            };
-        });
-
-        return group;
-    } catch (e) {
-        if (e instanceof Error && e.message === UNSUPPORTED_IMPORT_FORMAT) throw e;
-        return null;
-    }
+    try { return parseTavernRegex(text, fallbackName); }
+    catch (e) { if (e instanceof Error && e.message === UNSUPPORTED_IMPORT_FORMAT) throw e; return null; }
 }
 
 // --- API Configs ──────────────────────────────────────────
