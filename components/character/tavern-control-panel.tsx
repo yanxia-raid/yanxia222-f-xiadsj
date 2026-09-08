@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Character } from "@/lib/character-types";
 import type { TavernCharacterCard, TavernLoreEntry, TavernRegexScript } from "@/lib/tavern/types";
 import { detectTavernFormatProfile } from "@/lib/tavern/adaptive";
@@ -76,7 +76,14 @@ export function TavernControlPanel({ char, onSaved }: { char: Character; onSaved
   const [tab, setTab] = useState<Tab>("overview");
   const [showRaw, setShowRaw] = useState(false);
   const [revision, setRevision] = useState(0);
-  const card = char.tavernCard;
+  // The parent character object is not guaranteed to be replaced after every
+  // keystroke. Keep an editor-local card so controlled inputs never snap back
+  // to the previous prop value while the persistent character is being saved.
+  const [draftCard, setDraftCard] = useState<TavernCharacterCard | null>(char.tavernCard || null);
+  useEffect(() => {
+    setDraftCard(char.tavernCard || null);
+  }, [char.id, char.tavernCard?.raw, char.tavernCard?.data]);
+  const card = draftCard;
   const profile = useMemo(() => card ? detectTavernFormatProfile(card) : null, [card, revision]);
   const scripts = useMemo(() => card ? getRegexScripts(card) : [], [card, revision]);
   const binding = useMemo(() => card ? resolveBinding(loadBindingConfig(), char.id, "chat") : null, [card, char.id, revision]);
@@ -87,14 +94,33 @@ export function TavernControlPanel({ char, onSaved }: { char: Character; onSaved
   const extension = ext(card);
   const greetings = [String(d.first_mes || ""), ...(Array.isArray(d.alternate_greetings) ? d.alternate_greetings.map(String) : [])];
   const save = (updater: (c: TavernCharacterCard) => void) => {
+    // Update the visible draft first. Persistence is a second step, so React's
+    // controlled inputs always render the value the user just typed.
+    if (card) {
+      const nextDraft = JSON.parse(JSON.stringify(card)) as TavernCharacterCard;
+      updater(nextDraft);
+      setDraftCard(nextDraft);
+    }
     const updated = saveTavernCharacterCard(char.id, updater);
-    if (updated) { setRevision(v => v + 1); onSaved?.(updated); }
+    if (updated) {
+      setDraftCard(updated.tavernCard || null);
+      setRevision(v => v + 1);
+      onSaved?.(updated);
+    }
   };
   const reset = () => {
-    const restored = restoreTavernCardOriginal(char);
-    if (!restored) return;
-    saveTavernCharacterCard(char.id, c => { c.data = restored.tavernCard!.data; c.raw = restored.tavernCard!.raw; });
-    onSaved?.(restored); setRevision(v => v + 1);
+    const source = card ? { ...char, tavernCard: card } : char;
+    const restored = restoreTavernCardOriginal(source);
+    if (!restored?.tavernCard) return;
+    const restoredCard = restored.tavernCard;
+    const updated = saveTavernCharacterCard(char.id, c => {
+      c.data = JSON.parse(JSON.stringify(restoredCard.data));
+      c.raw = JSON.parse(JSON.stringify(restoredCard.raw));
+    });
+    const finalCharacter = updated || restored;
+    setDraftCard(finalCharacter.tavernCard || null);
+    onSaved?.(finalCharacter);
+    setRevision(v => v + 1);
   };
   const editField = (key: string, value: string) => save(c => { (c.data as Record<string, unknown>)[key] = value; });
   const setGreeting = (index: number, value: string) => save(c => { if (index === 0) c.data.first_mes = value; else { const a = Array.isArray(c.data.alternate_greetings) ? [...c.data.alternate_greetings] : []; a[index - 1] = value; c.data.alternate_greetings = a; } });
