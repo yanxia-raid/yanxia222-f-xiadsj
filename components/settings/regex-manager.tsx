@@ -10,7 +10,8 @@ import {
     UNSUPPORTED_IMPORT_FORMAT,
 } from "@/lib/settings-storage";
 import type { RegexConfig, RegexRule } from "@/lib/settings-types";
-import { exportTavernRegex } from "@/lib/tavern-native-adapter";
+import { exportTavernRegex, parseTavernRegex } from "@/lib/tavern-native-adapter";
+import { TavernNativeResourceEditor } from "./tavern-native-resource-editor";
 import { testRegexRule } from "@/lib/llm-prompt-assembler";
 import { MacroEngine } from "@/lib/macro-engine";
 import { areTagsEqual, getTagProfileId, getTagsLabel, type TagProfile } from "@/lib/content-tag-utils";
@@ -261,6 +262,23 @@ export function RegexManager({ isActive = true }: { isActive?: boolean } = {}) {
     // --- Rule Level Operations ---
     const activeGroup = groups.find(g => g.id === activeGroupId);
 
+    const saveNativeRegex = (text: string) => {
+        if (!activeGroup?.tavernNative) return "没有找到 Tavern 原生数据。";
+        try {
+            const parsed = parseTavernRegex(text, activeGroup.name);
+            if (!parsed?.tavernNative) return "无法识别为 Tavern 原生正则 JSON。";
+            parsed.id = activeGroup.id;
+            parsed.createdAt = activeGroup.createdAt;
+            parsed.updatedAt = Date.now();
+            const next = groups.map(g => g.id === activeGroup.id ? parsed : g);
+            saveRegexes(next);
+            setGroups(next);
+            return null;
+        } catch {
+            return "JSON 无效，未保存。";
+        }
+    };
+
     const visibleRules = activeGroup?.rules || [];
 
     // ── 规则左滑操作（微信式：左滑露出「新增/删除」） ──
@@ -468,6 +486,15 @@ export function RegexManager({ isActive = true }: { isActive?: boolean } = {}) {
                     )}
                 </>
             ) : (
+                activeGroup?.tavernNative ? (
+                    <TavernNativeResourceEditor
+                        title={activeGroup.name || "正则组详情"}
+                        description="这是 Tavern 原生 Regex。直接编辑原始 JSON，保留 placement、markdownOnly、promptOnly、runOnEdit、depth、trimStrings 等字段，不再套用旧固定模板。"
+                        value={exportTavernRegex(activeGroup)}
+                        onSave={saveNativeRegex}
+                        onExport={() => void handleExport(activeGroup)}
+                    />
+                ) : (
                 <>
                     {activeGroup && (
                         <div className="flex flex-col gap-4 pb-6">
@@ -939,6 +966,7 @@ export function RegexManager({ isActive = true }: { isActive?: boolean } = {}) {
                         </div>
                     )}
                 </>
+                )
             )}
 
             {confirmDeleteTarget && (

@@ -12,7 +12,8 @@ import {
 } from "@/lib/settings-storage";
 import { loadCharacters } from "@/lib/character-storage";
 import type { WorldBookConfig, WorldBookEntry } from "@/lib/settings-types";
-import { exportTavernWorldBook } from "@/lib/tavern-native-adapter";
+import { exportTavernWorldBook, parseTavernWorldBook } from "@/lib/tavern-native-adapter";
+import { TavernNativeResourceEditor } from "./tavern-native-resource-editor";
 import { SettingsContext } from "../phone-settings-app";
 import { BottomSheet, ConfirmDialog, TextExpandModal } from "@/components/ui/modal";
 import { SwipeActionRow, useSwipeActions } from "@/components/ui/swipe-actions";
@@ -321,6 +322,21 @@ export function WorldBookManager({ isActive = true }: { isActive?: boolean } = {
     };
 
     // --- Entry Level Operations ---
+    const saveNativeWorldBook = (text: string) => {
+        if (!activeBook?.tavernNative) return "没有找到 Tavern 原生数据。";
+        try {
+            const parsed = parseTavernWorldBook(text, activeBook.name);
+            if (!parsed?.tavernNative) return "无法识别为 Tavern 原生世界书 JSON。";
+            parsed.id = activeBook.id;
+            parsed.createdAt = activeBook.createdAt;
+            parsed.updatedAt = Date.now();
+            persist(books.map(b => b.id === activeBook.id ? parsed : b));
+            return null;
+        } catch {
+            return "JSON 无效，未保存。";
+        }
+    };
+
     const activeBook = books.find(b => b.id === activeBookId);
 
     const visibleEntries = activeBook?.entries || [];
@@ -531,8 +547,17 @@ export function WorldBookManager({ isActive = true }: { isActive?: boolean } = {
                     )}
                 </>
             ) : (
+                activeBook?.tavernNative ? (
+                    <TavernNativeResourceEditor
+                        title={activeBook.name || "世界书详情"}
+                        description="这是 Tavern 原生世界书。直接编辑原始 JSON，保留 selective、secondary keys、递归、group、character filter、触发器等扩展字段，不再套用旧固定模板。"
+                        value={exportTavernWorldBook(activeBook)}
+                        onSave={saveNativeWorldBook}
+                        onExport={() => void handleExport(activeBook)}
+                    />
+                ) : (
                 <>
-                    {/* Detail View — matches preset-manager layout */}
+                    {/* Detail View — legacy editor for newly-created/legacy resources only */}
                     {activeBook && (
                         <div className="flex flex-col gap-4 pb-6">
                             <div className="flex justify-center gap-2">
@@ -852,6 +877,7 @@ export function WorldBookManager({ isActive = true }: { isActive?: boolean } = {
                         </div>
                     )}
                 </>
+                )
             )}
 
             {/* Delete Confirmation Dialog */}

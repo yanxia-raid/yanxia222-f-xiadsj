@@ -12,6 +12,7 @@ import {
 } from "@/lib/settings-storage";
 import type { PresetConfig, Prompt, PromptOrderEntry } from "@/lib/settings-types";
 import { exportTavernPreset } from "@/lib/tavern-native-adapter";
+import { TavernNativeResourceEditor } from "./tavern-native-resource-editor";
 import {
     areTagsEqual,
     CONTENT_SCOPE_TAG_GROUPS,
@@ -131,6 +132,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
     const [expandTarget, setExpandTarget] = useState<{ identifier: string; field: string } | null>(null);
     const [importError, setImportError] = useState<string | null>(null);
     const [customApps, setCustomApps] = useState<InstalledCustomApp[]>([]);
+    const activeNativePreset = editingId ? presets.find(p => p.id === editingId) : undefined;
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -679,6 +681,23 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
         }
     };
 
+    const saveNativePreset = (text: string) => {
+        if (!activeNativePreset?.tavernNative) return "没有找到 Tavern 原生数据。";
+        try {
+            const parsed = parsePresetFromJson(text, activeNativePreset.name);
+            if (!parsed?.tavernNative) return "无法识别为 Tavern 原生预设 JSON。";
+            parsed.id = activeNativePreset.id;
+            parsed.createdAt = activeNativePreset.createdAt;
+            parsed.updatedAt = Date.now();
+            parsed.builtIn = activeNativePreset.builtIn;
+            parsed.builtInVersion = activeNativePreset.builtInVersion;
+            persist(presets.map(p => p.id === activeNativePreset.id ? parsed : p));
+            return null;
+        } catch {
+            return "JSON 无效，未保存。";
+        }
+    };
+
     const handleExport = async (preset: PresetConfig) => {
         const exportData = exportTavernPreset(preset);
         const { downloadFile } = await import("@/lib/download-utils");
@@ -752,6 +771,15 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                     )}
                 </>
             ) : (
+                activeNativePreset?.tavernNative ? (
+                    <TavernNativeResourceEditor
+                        title={activeNativePreset.name || "预设详情"}
+                        description="这是 Tavern 原生预设。直接编辑原始 JSON，不再用本应用旧的固定预设模板重排 prompts / prompt_order。"
+                        value={exportTavernPreset(activeNativePreset)}
+                        onSave={saveNativePreset}
+                        onExport={() => void handleExport(activeNativePreset)}
+                    />
+                ) : (
                 <>
                     {presets.map(preset => {
                         if (preset.id !== editingId) return null;
@@ -1352,6 +1380,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                         )
                     })}
                 </>
+                )
             )}
 
             {confirmExportId && (() => {
