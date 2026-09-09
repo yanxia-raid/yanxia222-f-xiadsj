@@ -134,7 +134,16 @@ export function syncTavernCardResources(character: Character): Character {
     ? card.data.extensions as Record<string, unknown> : {};
   const statusKeys = ["status_template", "statusTemplate", "status_format", "statusFormat", "statusBarTemplate", "state_template", "stateTemplate"];
   const hasStatusTemplate = statusKeys.some(k => typeof ext[k] === "string" && String(ext[k]).trim());
-  if (hasStatusTemplate) {
+  const statusRegexes = getRegexScripts(card);
+  const hasStatusRegex = statusRegexes.some((script: any) => {
+    const find = String(script?.findRegex || "");
+    const replacement = String(script?.replaceString || "");
+    // Status-bar cards often have no explicit status_template. Their marker
+    // (e.g. <live_forum>, <status>, <su>) is transformed into a full UI block.
+    return /<\/?(?:status|state|su|character_status|char_status|live_forum)\b/i.test(find)
+      && /<html\b|<style\b|<div\b|<section\b/i.test(replacement);
+  });
+  if (hasStatusTemplate || hasStatusRegex) {
     const parsed = parseTavernStatusBar(JSON.stringify(card.raw), `${card.data.name} · 状态栏`);
     if (parsed) {
       statusBarId = stableId('statusbar', character.id);

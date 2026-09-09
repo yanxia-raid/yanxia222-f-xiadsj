@@ -13,6 +13,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function locatePayload(raw: Record<string, unknown>) {
   const statusObject = findStatusObject(raw);
   if (statusObject) return { payload: statusObject, path: 'root' as const };
+  // Character-card exports store the useful status/regex payload under data.extensions.
   if (isRecord(raw.data) && isRecord(raw.data.extensions)) {
     return { payload: raw.data, path: 'data' as const };
   }
@@ -55,16 +56,28 @@ function findRegexKey(payload: Record<string, unknown>, raw: Record<string, unkn
 }
 
 function collectRegex(payload: Record<string, unknown>, raw: Record<string, unknown>): Array<Record<string, unknown>> {
-  const candidates: unknown[] = [
-    payload.regex_scripts, payload.regexScripts,
-    isRecord(payload.extensions) ? payload.extensions.regex_scripts : undefined,
-    isRecord(payload.extensions) ? payload.extensions.regexScripts : undefined,
-    isRecord(payload.data) ? payload.data.regex_scripts : undefined,
-    isRecord(payload.data) ? payload.data.regexScripts : undefined,
-    raw.regex_scripts, raw.regexScripts,
-  ];
-  for (const value of candidates) {
-    if (Array.isArray(value)) return clone(value.filter(isRecord));
+  const seen = new Set<Record<string, unknown>>();
+  const queue: Record<string, unknown>[] = [raw, payload];
+  const add = (value: unknown) => {
+    if (isRecord(value) && !seen.has(value)) queue.push(value);
+  };
+  while (queue.length) {
+    const obj = queue.shift()!;
+    if (seen.has(obj)) continue;
+    seen.add(obj);
+    for (const key of ['regex_scripts', 'regexScripts', 'scripts']) {
+      if (Array.isArray(obj[key])) {
+        const rows = obj[key].filter(isRecord);
+        if (rows.length) return clone(rows);
+      }
+    }
+    add(obj.data);
+    add(obj.extensions);
+    add(obj.statusbar);
+    add(obj.statusBar);
+    add(obj.status_bar);
+    add(obj.statusBarData);
+    add(obj.status_bar_data);
   }
   return [];
 }
@@ -169,10 +182,15 @@ export function getTavernStatusBarRegexScripts(statusBar: TavernStatusBarConfig)
  * promptOnly, trimStrings, depth and ordering.
  */
 export function applyTavernStatusBars(text: string, statusBars: TavernStatusBarConfig[]): string {
-  let value = text;
+  let value = String(text ?? '');
   for (const statusBar of statusBars) {
     if (!statusBar.enabled) continue;
-    value = applyTavernRegex(value, getTavernStatusBarRegexScripts(statusBar), 'output');
+    const scripts = getTavernStatusBarRegexScripts(statusBar);
+    if (!scripts.length) continue;
+    value = applyTavernRegex(value, scripts, 'output');
   }
-  return value.replace(/```html\s*([\s\S]*?)\s*```/gi, '$1');
+  // Tavern status-bar replacements are commonly stored as fenced HTML in the
+  // replaceString. The phone renders the resulting HTML directly, so remove
+  // only the outer fence and keep the HTML/CSS/JS intact.
+  return value.replace(/```(?:html)?\s*([\s\S]*?)\s*```/gi, '$1').trim();
 }
