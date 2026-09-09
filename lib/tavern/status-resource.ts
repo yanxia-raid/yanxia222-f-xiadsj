@@ -11,11 +11,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function locatePayload(raw: Record<string, unknown>) {
+  const statusObject = findStatusObject(raw);
+  if (statusObject) return { payload: statusObject, path: 'root' as const };
   if (isRecord(raw.data) && isRecord(raw.data.extensions)) {
     return { payload: raw.data, path: 'data' as const };
   }
   if (isRecord(raw.extensions)) {
     return { payload: raw, path: 'extensions' as const };
+  }
+  if (isRecord(raw.data)) {
+    return { payload: raw.data, path: 'data' as const };
   }
   return { payload: raw, path: 'root' as const };
 }
@@ -50,17 +55,35 @@ function findRegexKey(payload: Record<string, unknown>, raw: Record<string, unkn
 }
 
 function collectRegex(payload: Record<string, unknown>, raw: Record<string, unknown>): Array<Record<string, unknown>> {
-  const candidates = [
-    payload.regex_scripts,
-    payload.regexScripts,
+  const candidates: unknown[] = [
+    payload.regex_scripts, payload.regexScripts,
     isRecord(payload.extensions) ? payload.extensions.regex_scripts : undefined,
     isRecord(payload.extensions) ? payload.extensions.regexScripts : undefined,
-    raw.regex_scripts,
-    raw.regexScripts,
+    isRecord(payload.data) ? payload.data.regex_scripts : undefined,
+    isRecord(payload.data) ? payload.data.regexScripts : undefined,
+    raw.regex_scripts, raw.regexScripts,
   ];
-  const found = candidates.find(Array.isArray);
-  return found ? clone(found as Array<Record<string, unknown>>) : [];
+  for (const value of candidates) {
+    if (Array.isArray(value)) return clone(value.filter(isRecord));
+  }
+  return [];
 }
+
+function findStatusObject(raw: Record<string, unknown>): Record<string, unknown> | null {
+  const keys = ['statusbar', 'statusBar', 'status_bar', 'status', 'state', 'statusBarData', 'status_bar_data'];
+  for (const key of keys) {
+    const value = raw[key];
+    if (isRecord(value)) return value;
+  }
+  if (isRecord(raw.data)) {
+    for (const key of keys) {
+      const value = raw.data[key];
+      if (isRecord(value)) return value;
+    }
+  }
+  return null;
+}
+
 
 /**
  * Status-bar import is intentionally permissive: many ST status bars are actually
@@ -74,7 +97,7 @@ export function parseTavernStatusBar(text: string, fallbackName = '导入的酒�
     if (!isRecord(raw)) return null;
     const located = locatePayload(raw);
     const data = isRecord(raw.data) ? raw.data : raw;
-    const name = String(raw.name ?? data.name ?? fallbackName);
+    const name = String((located.payload.name ?? raw.name ?? data.name ?? fallbackName));
     const now = Date.now();
     return {
       id: `statusbar_${now}_${Math.random().toString(36).slice(2, 7)}`,
