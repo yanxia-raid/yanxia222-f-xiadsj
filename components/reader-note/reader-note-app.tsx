@@ -20,16 +20,16 @@ export function ReaderNoteApp({ onClose }: ReaderNoteAppProps) {
 
   return (
     <div
-      style={
+      style={{
         display: "flex",
         flexDirection: "column",
         height: "100%",
         width: "100%",
         background: "#f5f2ed",
-      }
+      }}
     >
       <div
-        style={
+        style={{
           display: "flex",
           alignItems: "center",
           gap: "8px",
@@ -37,12 +37,12 @@ export function ReaderNoteApp({ onClose }: ReaderNoteAppProps) {
           background: "rgba(245,242,237,.96)",
           borderBottom: "1px solid #e5dfd5",
           flexShrink: 0,
-        }
+        }}
       >
         <button
           onClick={handleClose}
           aria-label="返回"
-          style={
+          style={{
             border: "1px solid #e5dfd5",
             background: "#fffdf9",
             borderRadius: "10px",
@@ -51,7 +51,7 @@ export function ReaderNoteApp({ onClose }: ReaderNoteAppProps) {
             color: "#29251f",
             cursor: "pointer",
             lineHeight: 1,
-          }
+          }}
         >
           ←
         </button>
@@ -63,12 +63,12 @@ export function ReaderNoteApp({ onClose }: ReaderNoteAppProps) {
         ref={iframeRef}
         srcDoc={READER_NOTE_HTML}
         title="阅记"
-        style={
+        style={{
           flex: 1,
           width: "100%",
           border: "0",
           background: "#f5f2ed",
-        }
+        }}
         // 不再通过静态 /reader-note/index.html 路径加载，避免部署环境
         // 将 HTML 以 text/plain 返回。srcDoc 中的脚本和 localStorage 仍可正常工作。
       />
