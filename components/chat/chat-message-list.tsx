@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useSyncExternalStore } from "react";
 import { ChevronLeft, Star } from "lucide-react";
-import { loadChatSessions, loadChatContacts, ChatSession, createOrGetSession, createGroupSession, pushChatMessage, addChatContact, loadChatMessages, getLastVisibleSessionMessage, getChatMessagePreview, CHAT_UNREAD_UPDATED_EVENT } from "@/lib/chat-storage";
+import { loadChatSessions, loadChatContacts, ChatSession, createOrGetSession, createGroupSession, pushChatMessage, addChatContact, loadChatMessages, getLastVisibleSessionMessage, getChatMessagePreview, CHAT_UNREAD_UPDATED_EVENT, deleteChatSession, removeChatContact } from "@/lib/chat-storage";
 import { loadCharacters } from "@/lib/character-storage";
 import { Character } from "@/lib/character-types";
 import { resolveUserIdentity } from "@/lib/settings-storage";
@@ -14,6 +14,8 @@ import { PageShell } from "@/components/ui/page-shell";
 import { GroupCreateModal } from "./group-create-modal";
 import { formatChatUiTime } from "@/lib/chat-time";
 import { kvSet } from "@/lib/kv-db";
+import { clearChatOfflineTurns } from "@/lib/chat-offline-storage";
+import { deleteCharacterMomentHistory } from "@/lib/moments-storage";
 import { ChatFallbackAvatar } from "./chat-fallback-avatar";
 import {
     getMascotLastPreview,
@@ -79,6 +81,8 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
     const mascotSettings = useSyncExternalStore(subscribeMascotSettings, getMascotSettingsSnapshot, getMascotSettingsSnapshot);
     const mascotChat = useSyncExternalStore(subscribeMascotChat, getMascotChatSnapshot, getMascotChatSnapshot);
     const [mascotAvatarUrl, setMascotAvatarUrl] = useState(mascotSettings.avatarImage || DEFAULT_MASCOT_AVATAR);
+    const [actionSession, setActionSession] = useState<ChatSession | null>(null);
+    const [deleteConfirm, setDeleteConfirm] = useState<"session" | "friend" | null>(null);
 
     useEffect(() => {
         setIdentity(resolveUserIdentity());
@@ -113,6 +117,44 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
             window.removeEventListener(CHAT_UNREAD_UPDATED_EVENT, refreshSessions);
         };
     }, []);
+
+    const handleSessionAction = (session: ChatSession) => {
+        if (session.isGroup) return;
+        setActionSession(session);
+        setDeleteConfirm(null);
+    };
+
+    const finishDelete = (mode: "session" | "friend") => {
+        const session = actionSession;
+        if (!session || session.isGroup) return;
+
+        if (mode === "session") {
+            // 删除会话 = 删除线上聊天消息 + 线下聊天回合 + 会话记录，但保留好友。
+            deleteChatSession(session.id);
+            clearChatOfflineTurns(session.id);
+        } else {
+            // 删除好友 = 同角色的全部私聊会话/线上消息/线下回合 + 好友关系 + 朋友圈历史。
+            const contactId = session.contactId;
+            const relatedSessions = loadChatSessions().filter(s => !s.isGroup && s.contactId === contactId);
+            for (const related of relatedSessions) {
+                deleteChatSession(related.id);
+                clearChatOfflineTurns(related.id);
+            }
+            removeChatContact(contactId);
+            deleteCharacterMomentHistory(contactId);
+        }
+
+        if (activeSession && relatedToAction(activeSession, session, mode)) {
+            onSelectSession(null);
+        }
+        setSessions(loadChatSessions());
+        setActionSession(null);
+        setDeleteConfirm(null);
+        window.dispatchEvent(new CustomEvent("chat-messages-updated"));
+    };
+
+    const relatedToAction = (current: ChatSession, target: ChatSession, mode: "session" | "friend") =>
+        mode === "session" ? current.id === target.id : (!current.isGroup && current.contactId === target.contactId);
 
     return (
         <div className="relative flex-1 h-full">
@@ -244,7 +286,7 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
                             })
                             .map(s => (
                                 <div key={s.id}>
-                                    <SessionItem session={s} onSelect={() => onSelectSession(s)} isPinned={!!s.isPinned} isSpecial={!!s.isSpecial} unreadCount={s.unreadCount || 0} />
+                                    <SessionItem session={s} onSelect={() => onSelectSession(s)} onLongPress={handleSessionAction} isPinned={!!s.isPinned} isSpecial={!!s.isSpecial} unreadCount={s.unreadCount || 0} />
                                 </div>
                             ));
                             if (!showMascot && regularItems.length === 0) {
@@ -547,6 +589,48 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
             {showUserProfile && (
                 <UserProfilePanel onClose={() => { setShowUserProfile(false); setIdentity(resolveUserIdentity()); }} className="absolute inset-0 z-[100]" />
             )}
+
+            {actionSession && (
+                <div
+                    className="absolute inset-0 z-[10000] flex items-end justify-center bg-black/30"
+                    onClick={() => { setActionSession(null); setDeleteConfirm(null); }}
+                >
+                    <div
+                        className="w-full rounded-t-[22px] p-3 pb-[calc(12px+env(safe-area-inset-bottom))]"
+                        style={{ background: "var(--c-card-bg, rgba(255,255,255,.98))", color: "var(--c-text)" }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="text-center px-2 pt-1 pb-3">
+                            <div className="text-[15px] font-semibold text-[var(--c-text-title)]">
+                                {actionSession.alias || loadCharacters().find(c => c.id === actionSession.contactId)?.name || "对话"}
+                            </div>
+                            <div className="text-[12px] opacity-60 mt-1">选择操作</div>
+                        </div>
+                        {deleteConfirm ? (
+                            <div className="rounded-[16px] p-4" style={{ background: "var(--c-page-body-bg)" }}>
+                                <div className="text-[15px] font-semibold text-[var(--c-text-title)]">
+                                    {deleteConfirm === "session" ? "确认删除会话？" : "确认删除好友？"}
+                                </div>
+                                <div className="text-[12px] opacity-70 mt-2 leading-5">
+                                    {deleteConfirm === "session"
+                                        ? "将删除该角色的线上聊天记录、线下聊天记录和会话本身，但不会删除好友。"
+                                        : "将删除好友关系、线上聊天记录、线下聊天记录，以及该角色已发布的朋友圈历史动态。"}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 mt-4">
+                                    <button type="button" className="ui-btn ui-btn-ghost w-full" onClick={() => setDeleteConfirm(null)}>取消</button>
+                                    <button type="button" className="ui-btn w-full" style={{ background: "var(--c-danger, #d9534f)", color: "white" }} onClick={() => finishDelete(deleteConfirm)}>确认删除</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-2">
+                                <button type="button" className="ui-btn ui-btn-ghost w-full" onClick={() => setDeleteConfirm("session")}>删除会话</button>
+                                <button type="button" className="ui-btn w-full" style={{ background: "var(--c-danger, #d9534f)", color: "white" }} onClick={() => setDeleteConfirm("friend")}>删除好友</button>
+                                <button type="button" className="ui-btn ui-btn-ghost w-full" onClick={() => setActionSession(null)}>取消</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -636,8 +720,26 @@ function ContactPicker({ onClose, onSelect }: { onClose: () => void; onSelect: (
     );
 }
 
-function SessionItem({ session, onSelect, isPinned, isSpecial, unreadCount }: { session: ChatSession, onSelect: () => void, isPinned?: boolean, isSpecial?: boolean, unreadCount?: number }) {
+function SessionItem({ session, onSelect, onLongPress, isPinned, isSpecial, unreadCount }: { session: ChatSession, onSelect: () => void, onLongPress?: (session: ChatSession) => void, isPinned?: boolean, isSpecial?: boolean, unreadCount?: number }) {
     const chars = loadCharacters();
+    const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const longPressTriggered = React.useRef(false);
+    const clearLongPress = () => {
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
+    };
+    const startLongPress = () => {
+        clearLongPress();
+        longPressTriggered.current = false;
+        if (session.isGroup || !onLongPress) return;
+        longPressTimer.current = setTimeout(() => {
+            longPressTriggered.current = true;
+            onLongPress(session);
+        }, 520);
+    };
+    const cancelLongPress = () => clearLongPress();
     const character = chars.find(c => c.id === session.contactId);
     const lastVisibleMessage = getLastVisibleSessionMessage(session.id);
     const preview = lastVisibleMessage ? (getChatMessagePreview(lastVisibleMessage) || lastVisibleMessage.content) : "";
@@ -659,7 +761,17 @@ function SessionItem({ session, onSelect, isPinned, isSpecial, unreadCount }: { 
     return (
         <div
             className={`minimal-list-item${isPinned ? ' chat-pinned' : ''}${isSpecial ? ' chat-special' : ''}`}
-            onClick={onSelect}
+            onPointerDown={startLongPress}
+            onPointerUp={cancelLongPress}
+            onPointerCancel={cancelLongPress}
+            onPointerLeave={cancelLongPress}
+            onClick={() => {
+                if (longPressTriggered.current) {
+                    longPressTriggered.current = false;
+                    return;
+                }
+                onSelect();
+            }}
         >
             {isGroup ? (
                 <div className="minimal-avatar-wrapper grid grid-cols-2 grid-rows-2 gap-[1px] p-[2px] bg-[var(--c-card-border)] rounded-full overflow-hidden">
