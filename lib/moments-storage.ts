@@ -136,6 +136,27 @@ export function deleteMomentPost(postId: string): void {
     dbDeleteCommentsByPost(postId);
 }
 
+/** 删除某个角色发布的全部朋友圈历史，并清理这些动态的评论线程、待处理互动和发帖计划。 */
+export function deleteCharacterMomentHistory(characterId: string): void {
+    if (!characterId) return;
+
+    const posts = loadMomentPosts();
+    const ownedPostIds = posts.filter(post => post.authorType === "character" && post.authorId === characterId).map(post => post.id);
+    if (ownedPostIds.length > 0) {
+        const owned = new Set(ownedPostIds);
+        _postsCache = posts.filter(post => !owned.has(post.id));
+        _commentsCache = loadAllMomentComments().filter(comment => !owned.has(comment.postId));
+        for (const postId of ownedPostIds) {
+            dbDeletePost(postId);
+            dbDeleteCommentsByPost(postId);
+        }
+    }
+
+    // 清掉该角色未触发的朋友圈发帖计划与互动任务，避免删除好友后又产生旧角色动态。
+    saveAIMomentSchedule(loadAIMomentSchedule().filter(item => item.characterId !== characterId));
+    savePendingReactions(loadPendingReactions().filter(task => task.characterId !== characterId));
+}
+
 // ── Comments CRUD ──
 
 export function loadAllMomentComments(): MomentComment[] {
