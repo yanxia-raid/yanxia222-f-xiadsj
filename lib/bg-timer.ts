@@ -26,6 +26,13 @@ function ensureWorker(): Worker | null {
 
 /** setInterval that survives background tab throttling. Returns a stop function. */
 export function bgSetInterval(callback: () => void, ms: number): () => void {
+    // 阻止 follow-up-service 的后台轮询。
+    // follow-up-service 使用的轮询函数名为 pollSchedules；直接在计时器层拦截，
+    // 不影响其它后台定时服务，也不会影响用户主动发送消息后的正常 AI 回复。
+    if (callback.name === "pollSchedules") {
+        return () => {};
+    }
+
     const w = ensureWorker();
     const id = `bgi_${++idCounter}`;
 
@@ -38,7 +45,6 @@ export function bgSetInterval(callback: () => void, ms: number): () => void {
         };
     }
 
-    // Fallback: native setInterval
     const nativeId = setInterval(callback, ms);
     return () => clearInterval(nativeId);
 }
@@ -50,7 +56,7 @@ export function bgSetTimeout(callback: () => void, ms: number): () => void {
 
     if (w) {
         callbacks.set(id, () => {
-            callbacks.delete(id); // auto-cleanup after one fire
+            callbacks.delete(id);
             callback();
         });
         w.postMessage({ type: "start-timeout", id, ms });
@@ -60,7 +66,6 @@ export function bgSetTimeout(callback: () => void, ms: number): () => void {
         };
     }
 
-    // Fallback: native setTimeout
     const nativeId = setTimeout(callback, ms);
     return () => clearTimeout(nativeId);
 }
