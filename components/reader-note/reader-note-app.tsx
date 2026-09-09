@@ -26,6 +26,8 @@ export function ReaderNoteApp({ onClose }: ReaderNoteAppProps) {
         height: "100%",
         width: "100%",
         background: "#f5f2ed",
+        paddingTop: "env(safe-area-inset-top)",
+        boxSizing: "border-box",
       }}
     >
       <div
@@ -46,11 +48,17 @@ export function ReaderNoteApp({ onClose }: ReaderNoteAppProps) {
             border: "1px solid #e5dfd5",
             background: "#fffdf9",
             borderRadius: "10px",
-            padding: "4px 12px",
-            fontSize: "16px",
+            width: "42px",
+            height: "42px",
+            padding: 0,
+            fontSize: "18px",
             color: "#29251f",
             cursor: "pointer",
             lineHeight: 1,
+            flexShrink: 0,
+            touchAction: "manipulation",
+            position: "relative",
+            zIndex: 50,
           }}
         >
           ←
