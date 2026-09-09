@@ -55,6 +55,7 @@ const MDI_PATHS: Record<IconId, string> = {
   reading: mdiBookOpenVariant,
   cocreate: mdiFeather,
   story: mdiMovie,
+  xiashu: mdiFeather,
   game: mdiGamepadVariant,
   appmarket: mdiPackageVariant,
   xiaohongshu: mdiPackageVariant,

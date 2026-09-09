@@ -23,6 +23,7 @@ import "@/lib/qa-error-log";
 import { DiaryApp } from "@/components/diary/diary-app";
 import { XiaohongshuApp } from "@/components/xiaohongshu/xiaohongshu-app";
 import { StoryApp } from "@/components/story/story-app";
+import { XiaShuApp } from "@/components/xiashu/xia-shu-app";
 import { VnApp } from "@/components/vn/vn-app";
 import ReadingApp from "@/components/reading/reading-app";
 import MapApp from "@/components/map/map-app";
@@ -4046,6 +4047,10 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
 
     if (activeApp === "story") {
       return <StoryApp onClose={() => setActiveApp(null)} />;
+    }
+
+    if (activeApp === "xiashu") {
+      return <XiaShuApp onClose={() => setActiveApp(null)} />;
     }
 
     if (activeApp === "vnmode") {
