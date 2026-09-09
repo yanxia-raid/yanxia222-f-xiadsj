@@ -64,7 +64,16 @@ export function XiaShuApp({ onClose }: Props) {
   return <div className="xs-app">
     <header className="xs-header"><button onClick={onClose} className="xs-icon"><X size={18}/></button><div className="xs-brand"><span>夏书</span><small>剧情旅程</small></div><button className="xs-icon" onClick={()=>setSettingsOpen(true)}><Settings2 size={18}/></button></header>
     <nav className="xs-tabs"><button className={page==="travel"?"active":""} onClick={()=>setPage("travel")}><BookOpen size={16}/>夏旅</button><button className={page==="past"?"active":""} onClick={()=>setPage("past")}><Bookmark size={16}/>夏往</button></nav>
-    {page === "past" ? <PastPage sessions={sessions} onOpen={(s)=>setArchiveSession(s)}/>{archiveSession && <ArchiveSlots session={archiveSession} onClose={()=>setArchiveSession(null)} onOpen={(s,slot)=>{openSlot(s,slot);setArchiveSession(null);setPage("travel");}}/>} : active ? <StoryPage active={active} messages={messages} characters={characters} draft={draft} setDraft={setDraft} generating={generating} onSend={send} onBack={()=>setActive(null)} onAttr={setAttrId} onReview={()=>setReviewOpen(true)} onSlot={newSlot} onSpeak={speak} voiceVolume={voiceVolume} volume={volume} musicUrl={musicUrl} musicName={musicName} onMusic={(url,name)=>{setMusicUrl(url);setMusicName(name);updateXiaShuSession(active.id,{musicUrl:url,musicName:name});}}/> : <SetupPage step={setupStep} setStep={setSetupStep} chars={characters} worlds={worlds} selectedChars={selectedChars} setSelectedChars={setSelectedChars} selectedWorld={selectedWorld} setSelectedWorld={setSelectedWorld} onStart={startSession}/>} 
+    {page === "past" ? (
+      <>
+        <PastPage sessions={sessions} onOpen={(s)=>setArchiveSession(s)} />
+        {archiveSession && <ArchiveSlots session={archiveSession} onClose={()=>setArchiveSession(null)} onOpen={(s,slot)=>{openSlot(s,slot);setArchiveSession(null);setPage("travel");}}/>}
+      </>
+    ) : active ? (
+      <StoryPage active={active} messages={messages} characters={characters} draft={draft} setDraft={setDraft} generating={generating} onSend={send} onBack={()=>setActive(null)} onAttr={setAttrId} onReview={()=>setReviewOpen(true)} onSlot={newSlot} onSpeak={speak} voiceVolume={voiceVolume} volume={volume} musicUrl={musicUrl} musicName={musicName} onMusic={(url,name)=>{setMusicUrl(url);setMusicName(name);updateXiaShuSession(active.id,{musicUrl:url,musicName:name});}}/>
+    ) : (
+      <SetupPage step={setupStep} setStep={setSetupStep} chars={characters} worlds={worlds} selectedChars={selectedChars} setSelectedChars={setSelectedChars} selectedWorld={selectedWorld} setSelectedWorld={setSelectedWorld} onStart={startSession}/>
+    )} 
     {attrId === "__user" ? <UserAttrPanel onClose={()=>setAttrId(null)}/> : attrId && <AttrPanel character={characters.find(c=>c.id===attrId)!} onClose={()=>setAttrId(null)}/>} 
     {reviewOpen && <ReviewPanel messages={messages} onClose={()=>setReviewOpen(false)}/>} 
     {settingsOpen && <SettingsPanel volume={volume} setVolume={setVolume} voiceVolume={voiceVolume} setVoiceVolume={setVoiceVolume} onClose={()=>setSettingsOpen(false)}/>} 
