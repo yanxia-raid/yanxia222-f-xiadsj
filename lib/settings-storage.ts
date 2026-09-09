@@ -272,8 +272,12 @@ export async function savePresetsAsync(presets: PresetConfig[]): Promise<void> {
 export function loadTavernStatusBars(): TavernStatusBarConfig[] {
     if (typeof window === "undefined") return [];
     try {
-        const raw = window.localStorage.getItem(TAVERN_STATUSBARS_KEY);
+        // The status-bar bucket is now KV/IndexedDB-backed, but keep a legacy
+        // localStorage fallback for users upgrading from the previous build or
+        // when this settings module is loaded before the global KV hydration.
+        const raw = kvGet(TAVERN_STATUSBARS_KEY) ?? window.localStorage.getItem(TAVERN_STATUSBARS_KEY);
         const value = raw ? JSON.parse(raw) : [];
+        if (raw && !kvGet(TAVERN_STATUSBARS_KEY)) kvSet(TAVERN_STATUSBARS_KEY, raw);
         return Array.isArray(value) ? value : [];
     } catch {
         return [];
@@ -282,7 +286,7 @@ export function loadTavernStatusBars(): TavernStatusBarConfig[] {
 
 export function saveTavernStatusBars(statusBars: TavernStatusBarConfig[]): void {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(TAVERN_STATUSBARS_KEY, JSON.stringify(statusBars));
+    kvSet(TAVERN_STATUSBARS_KEY, JSON.stringify(statusBars));
     window.dispatchEvent(new CustomEvent("settings-tavern-statusbars-updated"));
 }
 
@@ -982,18 +986,22 @@ export function resolveBinding(
         if (slot.statusBarId) resolved.statusBarId = slot.statusBarId;
     };
 
+    // App-level defaults are shared by every character using that app.
+    // They sit between global defaults and character defaults, while a
+    // character's own app override remains the final layer.
+    if (appId && config.appDefaults?.[appId]) {
+        applySlot(config.appDefaults[appId]!);
+    }
+
     if (!characterId) return resolved;
 
-    // Apply character defaults
+    // Apply character defaults.
     const charBinding = config.characterBindings.find(b => b.characterId === characterId);
     if (charBinding) {
         applySlot(charBinding.defaults);
     }
 
-    if (appId && config.appDefaults?.[appId]) {
-        applySlot(config.appDefaults[appId]!);
-    }
-
+    // Finally apply the character + app specific override.
     if (appId && charBinding?.appOverrides[appId]) {
         applySlot(charBinding.appOverrides[appId]!);
     }
