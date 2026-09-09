@@ -14,7 +14,7 @@ export function getXiaShuResources(characterIds: string[]) {
   const bindings = loadBindingConfig(); const regexes = loadRegexes(); const statusBars = loadTavernStatusBars();
   const regexIds = new Set<string>(); const status: Record<string,string> = {};
   for (const characterId of characterIds) {
-    const slot = resolveBinding(bindings, characterId, "story");
+    const slot = resolveBinding(bindings, characterId, "xiashu");
     (slot.regexIds || []).forEach(id => regexIds.add(id));
     if (slot.statusBarId) status[characterId] = slot.statusBarId;
     const char = loadCharacters().find(c => c.id === characterId);
@@ -46,8 +46,8 @@ export function buildXiaShuPrompt(characterIds: string[], worldId: string, histo
 
 export async function generateXiaShuCompletion(characterIds: string[], worldId: string, history: XiaShuMessage[], signal?: AbortSignal) {
   const bindings = loadBindingConfig();
-  const first = characterIds[0]; const binding = resolveBinding(bindings, first, "story");
-  if (!binding.apiConfigId) throw new Error("请先在设置 → 绑定管理 → 剧情中绑定 API。");
+  const first = characterIds[0]; const binding = resolveBinding(bindings, first, "xiashu");
+  if (!binding.apiConfigId) throw new Error("请先在设置 → 绑定管理 → 夏书中绑定 API。");
   const api = loadApiConfigs().find(x => x.id === binding.apiConfigId); if (!api) throw new Error("找不到已绑定的 API。");
   const preset = binding.presetId ? loadPresets().find(x => x.id === binding.presetId) || null : loadPresets().find(x => x.builtIn) || null;
   const resources = getXiaShuResources(characterIds);
