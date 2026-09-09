@@ -41,7 +41,7 @@ export function loadXiaShuMessages(sessionId: string) { return messages.filter(x
 export function loadXiaShuSlots(sessionId: string) { return slots.filter(x => x.sessionId === sessionId).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt)); }
 export function loadXiaShuSlotMessages(slotId: string) { return slots.find(x => x.id === slotId)?.messageSnapshot || []; }
 
-export function createXiaShuSession(input: Pick<XiaShuSession, "title" | "characterIds" | "worldId" | "worldName">) {
+export function createXiaShuSession(input: Pick<XiaShuSession, "title" | "characterIds" | "worldName"> & Partial<Pick<XiaShuSession, "worldBookId" | "worldId" | "presetId" | "regexIds" | "statusBarIds" | "customCSS" | "uiHtml" | "musicUrl" | "musicName">>) {
   const now = new Date().toISOString();
   const session: XiaShuSession = { id: id("xia_sess"), ...input, createdAt: now, updatedAt: now, bgVolume: .35, voiceVolume: .8 };
   sessions.unshift(session); db.sessions.put(session).catch(() => undefined);

@@ -20,17 +20,21 @@ export type XiaShuSlot = {
   messageSnapshot?: XiaShuMessage[];
 };
 
+/** Per-story resources. These are intentionally independent from character/app bindings. */
 export type XiaShuSession = {
   id: string;
   title: string;
   characterIds: string[];
-  worldId: string;
+  worldBookId?: string;
+  worldId?: string; // legacy migration only
   worldName: string;
   createdAt: string;
   updatedAt: string;
+  presetId?: string;
+  regexIds?: string[];
+  statusBarIds?: string[];
   customCSS?: string;
   uiHtml?: string;
-  statusBarIds?: Record<string, string>;
   musicUrl?: string;
   musicName?: string;
   bgVolume?: number;
