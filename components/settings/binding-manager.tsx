@@ -31,6 +31,7 @@ import type { InstalledCustomApp } from "@/lib/custom-app-types";
 const APP_ICON_MAP: Partial<Record<ContentAppId, IconId>> = {
     adventure: "mapmode",
     vn: "vnmode",
+    xiashu: "xiashu",
 };
 const appIconId = (appId: ContentAppId): IconId => APP_ICON_MAP[appId] ?? appId as IconId;
 import type {
@@ -91,7 +92,7 @@ const AUX_FIELD_VISUALS: Record<AuxBindingField, { icon: LucideIcon; color: stri
 };
 
 const APP_OVERRIDE_COLORS = CONTENT_APP_ACCENTS;
-const REGEX_BINDABLE_APP_IDS: ContentAppId[] = ["chat", "group_chat", "story"];
+const REGEX_BINDABLE_APP_IDS: ContentAppId[] = ["chat", "group_chat", "story", "xiashu"];
 
 const bindingAccentStyle = (color: string): CSSProperties => ({
     "--binding-accent": color,

@@ -30,6 +30,7 @@ const BASE_REGEX_SCOPE_TAG_PROFILES = [
     { id: "chat", label: "聊天", tags: ["chat", "text"] },
     { id: "group_chat", label: "群聊", tags: ["group_chat", "text"] },
     { id: "story", label: "剧情", tags: ["story"] },
+    { id: "xiashu", label: "夏书", tags: ["xiashu", "story"] },
     { id: "offline", label: "线下", tags: ["offline"] },
 ];
 
