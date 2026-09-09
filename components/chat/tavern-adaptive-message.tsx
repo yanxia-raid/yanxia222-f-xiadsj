@@ -4,7 +4,9 @@ import { loadCharacters } from "@/lib/character-storage";
 import { applyTavernResponseFormat, detectTavernFormatProfile, extractTavernStatus, type TavernCharacterCard } from "@/lib/tavern";
 import type { ReactNode } from "react";
 import { TavernStatusBar } from "@/components/chat/tavern-status-bar";
-import { loadBindingConfig, loadTavernStatusBars, resolveBinding } from "@/lib/settings-storage";
+import { loadBindingConfig, loadRegexes, loadTavernStatusBars, resolveBinding } from "@/lib/settings-storage";
+import { applyAllOutputRegex } from "@/lib/llm-prompt-assembler";
+import type { RegexConfig } from "@/lib/settings-types";
 import { applyTavernStatusBars } from "@/lib/tavern/status-resource";
 
 type Props = {
@@ -12,6 +14,11 @@ type Props = {
   content: string;
   render: (content: string) => ReactNode;
   onActionSelect?: (text: string) => void;
+  /** Override the normal chat app binding for story-like surfaces. */
+  appId?: string;
+  appTags?: string[];
+  extraRegexes?: RegexConfig[];
+  extraStatusBarIds?: string[];
 };
 
 function readString(ext: Record<string, unknown>, keys: string[]) {
@@ -255,7 +262,7 @@ function TavernCardDirectEmbed({ html, css, onActionSelect }: { html: string; cs
   );
 }
 
-export function TavernAdaptiveMessage({ characterId, content, render, onActionSelect }: Props) {
+export function TavernAdaptiveMessage({ characterId, content, render, onActionSelect, appId = "chat", appTags, extraRegexes = [], extraStatusBarIds = [] }: Props) {
   const [card, setCard] = useState<TavernCharacterCard | null>(null);
   const [statusBarRevision, setStatusBarRevision] = useState(0);
   const adaptiveRef = useRef<HTMLDivElement>(null);
@@ -292,12 +299,20 @@ export function TavernAdaptiveMessage({ characterId, content, render, onActionSe
     const cardOutput = card
       ? applyTavernResponseFormat(card, content, { preserveInteractiveHtml: true })
       : content;
-    const slot = characterId ? resolveBinding(loadBindingConfig(), characterId, "chat") : {};
-    const boundStatusBar = slot.statusBarId
-      ? loadTavernStatusBars().filter(item => item.id === slot.statusBarId && item.enabled)
-      : [];
-    return applyTavernStatusBars(cardOutput, boundStatusBar);
-  }, [card, content, statusBarRevision]);
+    const slot = characterId ? resolveBinding(loadBindingConfig(), characterId, appId) : {};
+    const boundRegexIds = new Set<string>();
+    (slot.regexIds || []).forEach(id => boundRegexIds.add(id));
+    const libraryRegexes = loadRegexes().filter(item => boundRegexIds.has(item.id));
+    const storyRegexes = [...libraryRegexes, ...extraRegexes];
+    const regexOutput = storyRegexes.length
+      ? applyAllOutputRegex(cardOutput, storyRegexes, { activeTags: appTags || [appId] })
+      : cardOutput;
+    const statusIds = new Set<string>(extraStatusBarIds);
+    if (slot.statusBarId) statusIds.add(slot.statusBarId);
+    for (const id of extraStatusBarIds) statusIds.add(id);
+    const boundStatusBar = loadTavernStatusBars().filter(item => statusIds.has(item.id) && item.enabled);
+    return applyTavernStatusBars(regexOutput, boundStatusBar);
+  }, [card, content, statusBarRevision, appId, appTags, extraRegexes, extraStatusBarIds]);
 
   const parsed = useMemo(() => extractTavernStatus(adapted), [adapted]);
   const profile = card ? detectTavernFormatProfile(card) : null;
