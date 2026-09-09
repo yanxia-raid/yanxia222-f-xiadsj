@@ -9,3 +9,23 @@
 @media(min-width:700px){.xs-story .xs-feed{padding-left:10%;padding-right:10%}.xs-character-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.xs-overlay{align-items:center}.xs-modal{border-radius:16px}}
 .xs-file{display:block;border:1px dashed #303030;border-radius:8px;padding:10px;color:#777;font-size:10px;margin-bottom:10px}.xs-file input{display:block;margin-top:7px;width:100%;font-size:9px}
 .xs-user-avatar{width:56px;height:56px;border:1px solid #303030;border-radius:14px;display:grid;place-items:center;color:#888;background:#151515;flex:none}
+
+/* Story-level Tavern theme + mobile-safe controls */
+.xs-story{position:relative;isolation:isolate;padding-top:env(safe-area-inset-top);}
+.xs-story-head{position:relative;z-index:20;min-height:56px;padding-top:2px;}
+.xs-back-button{position:relative;z-index:50;flex:none;width:42px;height:42px;min-width:42px;touch-action:manipulation;pointer-events:auto;}
+.xs-dialogue-content{width:100%;min-width:0;overflow-wrap:anywhere;}
+.xs-msg.assistant .xs-ai-text{display:block;}
+.xs-msg.narration{margin:4px 8% 16px;}
+.xs-msg.narration .xs-narration-text{border-top:1px solid #222;border-bottom:1px solid #222;text-align:center;padding:9px 12px;}
+.xs-binding{padding-bottom:calc(18px + env(safe-area-inset-bottom));}
+.xs-binding select.xs-input{appearance:auto;}
+.xs-bind-group{border:1px solid #292929;border-radius:10px;padding:10px;margin:8px 0;}
+.xs-bind-group>b{display:block;font-size:11px;margin-bottom:7px;color:#ddd;}
+.xs-check{display:flex!important;align-items:center;gap:8px;padding:7px 0!important;border-top:1px solid #1d1d1d;}
+.xs-check:first-of-type{border-top:0;}
+.xs-check input{width:15px;height:15px;accent-color:#eee;}
+.xs-check span{font-size:10px;color:#aaa;}
+.xs-theme-textarea{display:block;width:100%;min-height:130px;box-sizing:border-box;resize:vertical;background:#090909;color:#eee;border:1px solid #292929;border-radius:9px;padding:10px;font-size:10px;line-height:1.5;margin-top:7px;}
+.xs-bind-save{width:100%;margin-top:6px;}
+.xs-hint{color:#666;font-size:10px;line-height:1.6;margin:10px 0 0;}
