@@ -66,7 +66,7 @@ import type { UserIdentity } from "@/components/settings/user-identity";
 import { loadCharacters } from "@/lib/character-storage";
 import type { Character } from "@/lib/character-types";
 
-type Level = "global" | "character" | "app";
+type Level = "global" | "appGlobal" | "character" | "app";
 type SingleBindingField = "apiConfigId" | "voiceConfigId" | "presetId" | "userIdentityId" | "statusBarId";
 type MultiBindingField = "worldBookIds" | "regexIds";
 type BindingField = SingleBindingField | MultiBindingField;
@@ -256,6 +256,13 @@ export function BindingManager() {
         if (level === "global") {
             setOverrideBack(null);
             setSubpageTitle(null);
+        } else if (level === "appGlobal") {
+            const appLabel = selectedAppId ? getAppLabel(selectedAppId) : "应用";
+            setSubpageTitle(`${appLabel} · 专属绑定`);
+            setOverrideBack(() => () => {
+                setLevel("global");
+                setSelectedAppId(null);
+            });
         } else if (level === "character") {
             const charName = characters.find(c => c.id === selectedCharId)?.name || "角色";
             setSubpageTitle(`${charName} 的绑定`);
@@ -282,6 +289,22 @@ export function BindingManager() {
     const updateGlobalSlot = (field: keyof BindingSlot, value: string | string[] | undefined) => {
         const newGlobal = { ...config.globalDefaults, [field]: value || undefined };
         persist({ ...config, globalDefaults: newGlobal });
+    };
+
+    const updateGlobalAppSlot = (field: keyof BindingSlot, value: string | string[] | undefined) => {
+        if (!selectedAppId) return;
+        const appDefaults = { ...(config.appDefaults ?? {}) };
+        const current = appDefaults[selectedAppId] || {};
+        const nextSlot = { ...current, [field]: value || undefined };
+        const nextAppDefaults = { ...appDefaults, [selectedAppId]: nextSlot };
+        persist({ ...config, appDefaults: nextAppDefaults });
+    };
+
+    const resetGlobalAppBinding = () => {
+        if (!selectedAppId) return;
+        const appDefaults = { ...(config.appDefaults ?? {}) };
+        delete appDefaults[selectedAppId];
+        persist({ ...config, appDefaults });
     };
 
     const updateCharDefaultSlot = (field: keyof BindingSlot, value: string | string[] | undefined) => {
@@ -312,6 +335,7 @@ export function BindingManager() {
 
     const getCurrentSlot = (): BindingSlot => {
         if (level === "global") return config.globalDefaults;
+        if (level === "appGlobal" && selectedAppId) return config.appDefaults?.[selectedAppId] || {};
         const binding = getCharacterBinding(config, selectedCharId);
         if (level === "character") return binding.defaults;
         if (level === "app" && selectedAppId) return binding.appOverrides[selectedAppId] || {};
@@ -333,12 +357,14 @@ export function BindingManager() {
     const getInheritedSlot = (): BindingSlot => {
         if (level === "global") return {};
         const inherited = mergeSlotInto({}, config.globalDefaults);
+        if (level === "appGlobal") return inherited;
         const binding = getCharacterBinding(config, selectedCharId);
-        if (level === "character") return inherited;
-        mergeSlotInto(inherited, binding.defaults);
-        if (level === "app" && selectedAppId) {
-            mergeSlotInto(inherited, config.appDefaults?.[selectedAppId]);
+        if (level === "character") {
+            mergeSlotInto(inherited, config.appDefaults?.[selectedAppId || ""]);
+            return inherited;
         }
+        mergeSlotInto(inherited, config.appDefaults?.[selectedAppId || ""]);
+        mergeSlotInto(inherited, binding.defaults);
         return inherited;
     };
 
@@ -349,13 +375,15 @@ export function BindingManager() {
     };
 
     const getInheritLabel = (): string => {
-        if (level === "character") return "继承全局";
+        if (level === "character") return "继承全局 / 应用专属";
         if (level === "app") return "继承上级绑定";
+        if (level === "appGlobal") return "继承全局";
         return "";
     };
 
     const handleUpdate = (field: keyof BindingSlot, value: string | string[] | undefined) => {
         if (level === "global") updateGlobalSlot(field, value);
+        else if (level === "appGlobal") updateGlobalAppSlot(field, value);
         else if (level === "character") updateCharDefaultSlot(field, value);
         else if (level === "app") updateAppSlot(field, value);
     };
@@ -977,6 +1005,40 @@ export function BindingManager() {
                     </section>
 
                     <section className="flex flex-col gap-3">
+                        <div className="flex items-center justify-between gap-3">
+                            <p className="settings-menu-section-title min-w-0">App 专属绑定</p>
+                            <span className="ts-10 opacity-55">独立于角色，作用于该应用的所有角色</span>
+                        </div>
+                        <div className="binding-app-grid">
+                            {appOverrideEntries.map(app => {
+                                const slot = config.appDefaults?.[app.id];
+                                const count = countOverrides(slot, app.id);
+                                return (
+                                    <button
+                                        key={`global-${app.id}`}
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedAppId(app.id);
+                                            setSelectedCharId("");
+                                            setActiveSlotSheetField(null);
+                                            setLevel("appGlobal");
+                                        }}
+                                        className="g-card binding-app-card"
+                                        style={bindingAccentStyle(app.color)}
+                                        aria-label={`${app.label}应用专属绑定`}
+                                    >
+                                        <span className="binding-app-icon">
+                                            {app.iconDataUrl ? <img src={app.iconDataUrl} alt="" className="binding-app-icon-image" /> : <IconGlyph id={app.iconId} className="binding-app-icon-glyph" />}
+                                        </span>
+                                        <span className="binding-app-label">{app.label}</span>
+                                        {count > 0 && <span className="binding-app-badge">{count}</span>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </section>
+
+                    <section className="flex flex-col gap-3">
                         <p className="settings-menu-section-title">Auxiliary API</p>
                         <div className="flex flex-col gap-3">
                             {renderAuxSelect("memorySummaryApiConfigId", "记忆总结 API")}
@@ -992,6 +1054,25 @@ export function BindingManager() {
             {renderSlotPickerDialog()}
             {renderAuxPickerDialog()}
             {renderCharacterPickerDialog()}
+
+            {/* App-level binding shared by every character */}
+            {level === "appGlobal" && (
+                <>
+                    <section className="flex flex-col gap-3">
+                        <p className="settings-menu-section-title">App 专属绑定</p>
+                        {renderBindingSlotCards(currentSlot, inheritLabel, setActiveSlotSheetField, {
+                            includeRegex: canBindRegexInApp(selectedAppId),
+                        })}
+                    </section>
+
+                    <button
+                        onClick={resetGlobalAppBinding}
+                        className="ui-btn ui-btn-soft-danger flex justify-center"
+                    >
+                        <RotateCcw size={16} /> 重置此应用专属绑定
+                    </button>
+                </>
+            )}
 
             {/* Level 2: Character binding details */}
             {level === "character" && (

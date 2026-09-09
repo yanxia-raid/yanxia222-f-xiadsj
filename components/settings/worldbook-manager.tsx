@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef, useContext, useCallback } from "react";
-import { TavernCompatibleEditor } from "./tavern-compatible-editor";
 import { Plus, BookOpen, Trash2, Upload, Download, ChevronLeft, AlertCircle, Maximize2, Replace } from "lucide-react";
 import {
     loadWorldBooks,
@@ -28,7 +27,6 @@ export function WorldBookManager({ isActive = true }: { isActive?: boolean } = {
     const [isLoaded, setIsLoaded] = useState(false);
     const [expandUid, setExpandUid] = useState<string | null>(null);
     const [importError, setImportError] = useState<string | null>(null);
-    const [showTavernRaw, setShowTavernRaw] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -323,7 +321,6 @@ export function WorldBookManager({ isActive = true }: { isActive?: boolean } = {
     };
 
     // --- Entry Level Operations ---
-
     const activeBook = books.find(b => b.id === activeBookId);
 
     const visibleEntries = activeBook?.entries || [];
@@ -474,21 +471,6 @@ export function WorldBookManager({ isActive = true }: { isActive?: boolean } = {
 
     if (!isLoaded) return null;
 
-    const tavernBook = viewMode === "detail" && activeBookId ? books.find(b => b.id === activeBookId) : null;
-    if (tavernBook?.tavernNative) {
-        return (
-            <div ref={wbContainerRef} className="flex flex-col gap-3 h-full">
-                <TavernCompatibleEditor
-                    kind="worldbook"
-                    resource={tavernBook}
-                    onChange={(updates) => updateBook(tavernBook.id, updates as Partial<WorldBookConfig>)}
-                    onDelete={() => removeBook(tavernBook.id)}
-                    onExport={() => { void handleExport(tavernBook); }}
-                />
-            </div>
-        );
-    }
-
     return (
         <div ref={wbContainerRef} className="flex flex-col gap-5 h-full">
             <input type="file" accept=".json" className="hidden" ref={fileInputRef} onChange={handleImport} />
@@ -550,16 +532,9 @@ export function WorldBookManager({ isActive = true }: { isActive?: boolean } = {
                 </>
             ) : (
                 <>
-                    {/* Detail View — legacy editor for newly-created/legacy resources only */}
+                    {/* Detail View — matches preset-manager layout */}
                     {activeBook && (
                         <div className="flex flex-col gap-4 pb-6">
-                            {activeBook.tavernNative && <div className="rounded-2xl border border-[var(--c-panel-border)] bg-black/[.025] p-3 dark:bg-white/[.025]">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div><div className="ts-11 font-black">TAVERN COMPAT · 自适应模式</div><div className="mt-1 ts-9 opacity-60">世界书按 Tavern 语义运行；常用字段直接编辑，secondary keys、递归、group、character filter 等原生扩展继续保留。</div></div>
-                                    <button type="button" onClick={() => setShowTavernRaw(v => !v)} className="shrink-0 rounded-full border px-3 py-1.5 ts-9 font-semibold">{showTavernRaw ? "收起原始 JSON" : "查看原始 JSON"}</button>
-                                </div>
-                                {showTavernRaw && <pre className="mt-2 max-h-72 overflow-auto rounded-xl bg-black/[.05] p-3 ts-9 leading-relaxed">{JSON.stringify(exportTavernWorldBook(activeBook), null, 2)}</pre>}
-                            </div>}
                             <div className="flex justify-center gap-2">
                                 <button
                                     type="button"
